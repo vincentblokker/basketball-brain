@@ -24,9 +24,9 @@ services:
     build:
       context: ../web
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: https://brain.clubduty.app/api
     container_name: bbrain-web
-    environment:
-      NEXT_PUBLIC_API_BASE: https://brain.clubduty.app/api
     expose:
       - "3000"
     depends_on:
