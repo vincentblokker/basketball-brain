@@ -8,7 +8,8 @@ __pycache__/
 *.egg-info/
 
 # Data
-api/data/raw/
+api/data/raw/*
+!api/data/raw/sources.json
 api/data/processed/
 api/chroma/
 

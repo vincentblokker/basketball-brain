@@ -1,0 +1,79 @@
+[
+  {
+    "id": "nbb-spelregels-2025-2026",
+    "file": "nbb-spelregels-2025-2026.pdf",
+    "title": "NBB Spelregels 2025-2026",
+    "content_type": "rule",
+    "audience": ["coach", "referee", "player"],
+    "age_category": "all",
+    "language": "nl",
+    "url": "https://www.nbb.basketball.nl/spelregels",
+    "source_type": "primary"
+  },
+  {
+    "id": "nbb-talentontwikkeling",
+    "file": "nbb-talentontwikkeling.pdf",
+    "title": "NBB Talentontwikkeling Richtlijnen",
+    "content_type": "philosophy",
+    "audience": ["coach", "parent"],
+    "age_category": "U10,U12,U14,U16,U18",
+    "language": "nl",
+    "url": "https://www.nbb.basketball.nl/talentontwikkeling",
+    "source_type": "primary"
+  },
+  {
+    "id": "fiba-rules-2024",
+    "file": "fiba-rules-2024.pdf",
+    "title": "FIBA Official Basketball Rules 2024",
+    "content_type": "rule",
+    "audience": ["coach", "referee"],
+    "age_category": "senior",
+    "language": "en",
+    "url": "https://www.fiba.basketball/documents/official-basketball-rules-2024.pdf",
+    "source_type": "primary"
+  },
+  {
+    "id": "te-jong-te-snel",
+    "file": "te-jong-te-snel.pdf",
+    "title": "Te jong, te snel — doorschuiven jeugdspelers",
+    "content_type": "research",
+    "audience": ["coach", "parent"],
+    "age_category": "U10,U12,U14",
+    "language": "nl",
+    "url": "n/a",
+    "source_type": "primary"
+  },
+  {
+    "id": "wooden-pyramid",
+    "file": "wooden-pyramid-of-success.html",
+    "title": "John Wooden — Pyramid of Success (Wikipedia)",
+    "content_type": "philosophy",
+    "audience": ["coach", "player"],
+    "age_category": "all",
+    "language": "en",
+    "url": "https://en.wikipedia.org/wiki/Pyramid_of_Success",
+    "source_type": "primary"
+  },
+  {
+    "id": "wiki-nl-basketbal",
+    "file": "wiki-nl-basketbal.html",
+    "title": "Basketbal (Nederlandse Wikipedia)",
+    "content_type": "general",
+    "audience": ["all"],
+    "age_category": "all",
+    "language": "nl",
+    "url": "https://nl.wikipedia.org/wiki/Basketbal",
+    "source_type": "primary"
+  },
+  {
+    "id": "wiki-shot-clock",
+    "file": "wiki-24-second-clock.html",
+    "title": "Shot Clock (Wikipedia)",
+    "content_type": "rule",
+    "audience": ["coach", "referee"],
+    "age_category": "all",
+    "language": "en",
+    "url": "https://en.wikipedia.org/wiki/Shot_clock",
+    "source_type": "primary"
+  }
+]
