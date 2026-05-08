@@ -4,8 +4,9 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from app.deps import get_generator, get_store
+from app.deps import get_bm25, get_generator, get_store
 from app.main import app
+from app.retrieval.bm25_index import BM25Index
 from app.retrieval.chroma_store import ChromaStore
 from app.schemas import Chunk
 
@@ -42,8 +43,12 @@ def client_with_mocks(monkeypatch):
         mock_gen = MagicMock()
         mock_gen.answer.return_value = "De shot clock is 24 seconden. Bronnen: Test Source — sec-0"
 
+        # BM25 lane needs to be overridden too — build from same seeded store
+        bm25 = BM25Index(store.all_chunks())
+
         app.dependency_overrides[get_store] = lambda: store
         app.dependency_overrides[get_generator] = lambda: mock_gen
+        app.dependency_overrides[get_bm25] = lambda: bm25
 
         try:
             yield TestClient(app), mock_gen, store
