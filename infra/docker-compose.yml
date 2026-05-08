@@ -10,8 +10,9 @@ services:
       - ../api/.env
     volumes:
       - chroma_data:/app/chroma
-    expose:
-      - "8000"
+    # Bind to localhost only — host Caddy proxies to 127.0.0.1:8000
+    ports:
+      - "127.0.0.1:8000:8000"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -27,29 +28,16 @@ services:
       args:
         NEXT_PUBLIC_API_BASE: https://brain.clubduty.app/api
     container_name: bbrain-web
-    expose:
-      - "3000"
+    # Bind to localhost only — host Caddy proxies to 127.0.0.1:3000
+    ports:
+      - "127.0.0.1:3000:3000"
     depends_on:
       api:
         condition: service_healthy
     restart: unless-stopped
 
-  caddy:
-    image: caddy:2-alpine
-    container_name: bbrain-caddy
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - api
-      - web
-    restart: unless-stopped
+# No caddy service — host's existing systemd Caddy serves all traffic.
+# See infra/README.md for the host Caddyfile snippet.
 
 volumes:
   chroma_data:
-  caddy_data:
-  caddy_config:
