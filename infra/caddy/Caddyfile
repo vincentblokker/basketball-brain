@@ -1,0 +1,20 @@
+brain.clubduty.app {
+    encode gzip zstd
+
+    # /api/* -> backend (strip /api prefix)
+    handle_path /api/* {
+        reverse_proxy api:8000 {
+            health_uri /health
+        }
+    }
+
+    # Everything else -> Next.js frontend
+    handle {
+        reverse_proxy web:3000
+    }
+
+    log {
+        output stdout
+        format console
+    }
+}

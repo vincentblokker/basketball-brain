@@ -1,0 +1,55 @@
+services:
+  api:
+    build:
+      # Build context is the repo root so the api image can include scripts/
+      # alongside api/app and api/data. See api/Dockerfile for the layout.
+      context: ..
+      dockerfile: api/Dockerfile
+    container_name: bbrain-api
+    env_file:
+      - ../api/.env
+    volumes:
+      - chroma_data:/app/chroma
+    expose:
+      - "8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  web:
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+    container_name: bbrain-web
+    environment:
+      NEXT_PUBLIC_API_BASE: https://brain.clubduty.app/api
+    expose:
+      - "3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: bbrain-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+    restart: unless-stopped
+
+volumes:
+  chroma_data:
+  caddy_data:
+  caddy_config:
