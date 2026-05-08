@@ -1,0 +1,631 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link2, Loader2, LogOut, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
+
+import { BasketballMark } from "@/components/marks";
+import { cn } from "@/lib/utils";
+import {
+  type AddUrlInput,
+  type Source,
+  addUrl,
+  adminToken,
+  checkAuth,
+  deleteSource,
+  formatBytes,
+  listSources,
+  reingestSource,
+  uploadFile,
+} from "@/lib/admin-api";
+
+const CONTENT_TYPES = ["rule", "philosophy", "research", "general"] as const;
+const LANGUAGES = ["nl", "en"] as const;
+const AGE_CATEGORIES = ["all", "U10", "U12", "U14", "U16", "U18", "senior"] as const;
+const AUDIENCES = ["all", "coach", "referee", "parent", "player"] as const;
+
+type Toast = { id: number; kind: "ok" | "err"; text: string };
+
+export default function AdminPage() {
+  const [authed, setAuthed] = useState<boolean | null>(null);
+  const [tokenInput, setTokenInput] = useState("");
+  const [sources, setSources] = useState<Source[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const toast = useCallback((kind: Toast["kind"], text: string) => {
+    const id = Date.now() + Math.random();
+    setToasts((t) => [...t, { id, kind, text }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 5000);
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      const stored = adminToken.get();
+      if (!stored) {
+        setAuthed(false);
+        return;
+      }
+      const ok = await checkAuth();
+      setAuthed(ok);
+      if (!ok) adminToken.clear();
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!authed) return;
+    void refresh();
+  }, [authed]);
+
+  const refresh = useCallback(async () => {
+    try {
+      setSources(await listSources());
+    } catch (e) {
+      toast("err", `Kon bronnen niet laden: ${(e as Error).message}`);
+    }
+  }, [toast]);
+
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    if (!tokenInput.trim()) return;
+    adminToken.set(tokenInput.trim());
+    const ok = await checkAuth();
+    if (ok) {
+      setAuthed(true);
+      setTokenInput("");
+      toast("ok", "Ingelogd.");
+    } else {
+      adminToken.clear();
+      toast("err", "Onjuiste admin-token.");
+    }
+  }
+
+  function handleLogout() {
+    adminToken.clear();
+    setAuthed(false);
+    setSources(null);
+    toast("ok", "Uitgelogd.");
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm(`Bron "${id}" verwijderen? Bijbehorende chunks worden uit ChromaDB gewist.`)) return;
+    setBusy(true);
+    try {
+      const r = await deleteSource(id);
+      toast("ok", `Verwijderd. ${r.chunks_deleted} chunks gewist.`);
+      await refresh();
+    } catch (e) {
+      toast("err", `Verwijderen mislukt: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleReingest(id: string) {
+    setBusy(true);
+    try {
+      const r = await reingestSource(id);
+      toast("ok", `Heringest. ${r.chunk_count} chunks.`);
+      await refresh();
+    } catch (e) {
+      toast("err", `Reingest mislukt: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (authed === null) {
+    return (
+      <Layout>
+        <div className="flex h-[60dvh] items-center justify-center text-fg-3">
+          <Loader2 className="h-5 w-5 animate-spin" />
+        </div>
+      </Layout>
+    );
+  }
+
+  if (!authed) {
+    return (
+      <Layout>
+        <main className="mx-auto max-w-md px-8 py-20">
+          <h1 className="mb-2 font-serif text-[32px] font-medium tracking-[-0.02em] text-fg">
+            Admin
+          </h1>
+          <p className="mb-8 text-[14px] text-fg-3">
+            Voer je admin-token in. Wordt lokaal in deze browser bewaard.
+          </p>
+          <form onSubmit={handleLogin} className="space-y-3">
+            <input
+              type="password"
+              value={tokenInput}
+              onChange={(e) => setTokenInput(e.target.value)}
+              placeholder="ADMIN_TOKEN"
+              className="w-full rounded-[10px] border border-line bg-bg-3 px-4 py-3 text-[15px] text-fg outline-none placeholder:text-fg-4 focus:border-line-3"
+              autoFocus
+            />
+            <button
+              type="submit"
+              disabled={!tokenInput.trim()}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-[8px] bg-accent px-4 py-2.5 text-[14px] font-semibold text-accent-ink transition-colors hover:bg-accent-2 disabled:opacity-40"
+            >
+              Inloggen
+            </button>
+          </form>
+        </main>
+        <ToastStack toasts={toasts} />
+      </Layout>
+    );
+  }
+
+  return (
+    <Layout onLogout={handleLogout}>
+      <main className="mx-auto max-w-[920px] px-8 py-12">
+        <div className="mb-8 flex items-baseline justify-between">
+          <div>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-accent before:mr-2.5 before:inline-block before:h-px before:w-[18px] before:align-middle before:bg-accent">
+              Admin · Bronnen
+            </p>
+            <h1 className="font-serif text-[32px] font-medium tracking-[-0.02em] text-fg">
+              Beheer kennisbank
+            </h1>
+          </div>
+          <button
+            onClick={() => void refresh()}
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 rounded-md border border-line bg-bg-3 px-2.5 py-1.5 text-[13px] text-fg-2 hover:border-line-2 hover:text-fg disabled:opacity-50"
+          >
+            <RefreshCw className={cn("h-[13px] w-[13px]", busy && "animate-spin")} /> Vernieuwen
+          </button>
+        </div>
+
+        <SourcesTable
+          sources={sources}
+          busy={busy}
+          onDelete={handleDelete}
+          onReingest={handleReingest}
+        />
+
+        <div className="my-12 grid grid-cols-1 gap-6 md:grid-cols-2">
+          <AddUrlCard
+            disabled={busy}
+            onAdded={() => void refresh()}
+            setBusy={setBusy}
+            toast={toast}
+          />
+          <UploadCard
+            disabled={busy}
+            onAdded={() => void refresh()}
+            setBusy={setBusy}
+            toast={toast}
+          />
+        </div>
+      </main>
+      <ToastStack toasts={toasts} />
+    </Layout>
+  );
+}
+
+/* ─────── sub-components ─────── */
+
+function Layout({ children, onLogout }: { children: React.ReactNode; onLogout?: () => void }) {
+  return (
+    <div className="min-h-dvh bg-bg">
+      <header className="flex items-center justify-between border-b border-line px-10 py-5">
+        <Link href="/" className="inline-flex items-center gap-3 text-fg">
+          <BasketballMark className="h-[22px] w-[22px] text-accent" />
+          <span className="text-[16px] font-semibold tracking-[-0.01em]">
+            Basketball Brain
+            <em className="ml-1 not-italic font-medium text-fg-3">admin</em>
+          </span>
+        </Link>
+        <nav className="flex items-center gap-3">
+          <Link
+            href="/"
+            className="rounded-md px-2.5 py-1.5 text-[14px] font-medium text-fg-2 transition-colors hover:bg-bg-3 hover:text-fg"
+          >
+            Chat
+          </Link>
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[14px] font-medium text-fg-2 hover:bg-bg-3 hover:text-fg"
+            >
+              <LogOut className="h-[14px] w-[14px]" /> Uitloggen
+            </button>
+          )}
+        </nav>
+      </header>
+      {children}
+    </div>
+  );
+}
+
+function SourcesTable({
+  sources,
+  busy,
+  onDelete,
+  onReingest,
+}: {
+  sources: Source[] | null;
+  busy: boolean;
+  onDelete: (id: string) => void;
+  onReingest: (id: string) => void;
+}) {
+  if (sources === null) {
+    return <div className="text-fg-3">Laden…</div>;
+  }
+  if (sources.length === 0) {
+    return (
+      <div className="rounded-[14px] border border-line bg-bg-3 px-6 py-10 text-center text-fg-3">
+        Nog geen bronnen. Voeg er eentje toe via URL of upload hieronder.
+      </div>
+    );
+  }
+  const totalChunks = sources.reduce((sum, s) => sum + s.chunk_count, 0);
+  return (
+    <div className="rounded-[14px] border border-line bg-bg-3 overflow-hidden">
+      <div className="flex items-center justify-between border-b border-line px-5 py-3 text-[12px] text-fg-3">
+        <span>{sources.length} bronnen · {totalChunks} chunks totaal</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[13.5px]">
+          <thead>
+            <tr className="text-left text-[11px] font-medium uppercase tracking-[0.12em] text-fg-4">
+              <th className="px-5 py-2.5 font-medium">Titel</th>
+              <th className="px-3 py-2.5 font-medium">Type</th>
+              <th className="px-3 py-2.5 font-medium">Taal</th>
+              <th className="px-3 py-2.5 font-medium text-right">Chunks</th>
+              <th className="px-3 py-2.5 font-medium text-right">Bestand</th>
+              <th className="px-5 py-2.5 font-medium text-right">Acties</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sources.map((s) => (
+              <tr key={s.id} className="border-t border-line hover:bg-bg-2">
+                <td className="px-5 py-3 align-top">
+                  <div className="font-medium text-fg">{s.title}</div>
+                  <div className="font-mono text-[11px] text-fg-4">{s.id}</div>
+                </td>
+                <td className="px-3 py-3 align-top text-fg-2">{s.content_type}</td>
+                <td className="px-3 py-3 align-top text-fg-2 uppercase">{s.language}</td>
+                <td className="px-3 py-3 align-top text-right font-mono text-fg-2">
+                  {s.chunk_count}
+                </td>
+                <td className="px-3 py-3 align-top text-right font-mono text-[11.5px] text-fg-3">
+                  {s.file_exists ? formatBytes(s.file_bytes) : <span className="text-[#f06c5d]">missing</span>}
+                </td>
+                <td className="px-5 py-3 align-top text-right">
+                  <div className="inline-flex items-center gap-1">
+                    <button
+                      onClick={() => onReingest(s.id)}
+                      disabled={busy || !s.file_exists}
+                      title="Heringest deze bron"
+                      className="rounded-md p-1.5 text-fg-3 hover:bg-bg-4 hover:text-fg disabled:opacity-30"
+                    >
+                      <RefreshCw className="h-[13px] w-[13px]" />
+                    </button>
+                    <button
+                      onClick={() => onDelete(s.id)}
+                      disabled={busy}
+                      title="Verwijder bron + chunks"
+                      className="rounded-md p-1.5 text-fg-3 hover:bg-bg-4 hover:text-[#f06c5d] disabled:opacity-30"
+                    >
+                      <Trash2 className="h-[13px] w-[13px]" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function MetadataFields({
+  contentType, setContentType,
+  language, setLanguage,
+  ageCategory, setAgeCategory,
+  audience, setAudience,
+}: {
+  contentType: string; setContentType: (v: string) => void;
+  language: string; setLanguage: (v: string) => void;
+  ageCategory: string; setAgeCategory: (v: string) => void;
+  audience: string[]; setAudience: (v: string[]) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2.5">
+      <Select label="Type" value={contentType} onChange={setContentType} options={[...CONTENT_TYPES]} />
+      <Select label="Taal" value={language} onChange={setLanguage} options={[...LANGUAGES]} />
+      <Select label="Leeftijd" value={ageCategory} onChange={setAgeCategory} options={[...AGE_CATEGORIES]} />
+      <MultiSelect label="Doelgroep" values={audience} onChange={setAudience} options={[...AUDIENCES]} />
+    </div>
+  );
+}
+
+function AddUrlCard({
+  disabled, onAdded, setBusy, toast,
+}: {
+  disabled: boolean;
+  onAdded: () => void;
+  setBusy: (b: boolean) => void;
+  toast: (kind: Toast["kind"], text: string) => void;
+}) {
+  const [url, setUrl] = useState("");
+  const [title, setTitle] = useState("");
+  const [contentType, setContentType] = useState("general");
+  const [language, setLanguage] = useState("nl");
+  const [ageCategory, setAgeCategory] = useState("all");
+  const [audience, setAudience] = useState<string[]>(["all"]);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!url.trim() || !title.trim()) return;
+    setSubmitting(true);
+    setBusy(true);
+    try {
+      const input: AddUrlInput = {
+        url: url.trim(),
+        title: title.trim(),
+        content_type: contentType,
+        audience,
+        age_category: ageCategory,
+        language,
+      };
+      const r = await addUrl(input);
+      toast("ok", `Toegevoegd: ${r.id} · ${r.chunk_count} chunks.`);
+      setUrl("");
+      setTitle("");
+      onAdded();
+    } catch (e) {
+      toast("err", `URL toevoegen mislukt: ${(e as Error).message}`);
+    } finally {
+      setSubmitting(false);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card title="Toevoegen via URL" icon={<Link2 className="h-[15px] w-[15px]" />}>
+      <form onSubmit={submit} className="space-y-3">
+        <Input label="URL" type="url" value={url} onChange={setUrl} placeholder="https://..." required />
+        <Input label="Titel" value={title} onChange={setTitle} placeholder="Bijv. NBB Spelregels 2025-2026" required />
+        <MetadataFields
+          contentType={contentType} setContentType={setContentType}
+          language={language} setLanguage={setLanguage}
+          ageCategory={ageCategory} setAgeCategory={setAgeCategory}
+          audience={audience} setAudience={setAudience}
+        />
+        <button
+          type="submit"
+          disabled={disabled || submitting || !url.trim() || !title.trim()}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-[8px] bg-accent px-4 py-2.5 text-[14px] font-semibold text-accent-ink hover:bg-accent-2 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {submitting ? <Loader2 className="h-[14px] w-[14px] animate-spin" /> : <Plus className="h-[14px] w-[14px]" />}
+          Toevoegen + ingest
+        </button>
+      </form>
+    </Card>
+  );
+}
+
+function UploadCard({
+  disabled, onAdded, setBusy, toast,
+}: {
+  disabled: boolean;
+  onAdded: () => void;
+  setBusy: (b: boolean) => void;
+  toast: (kind: Toast["kind"], text: string) => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState("");
+  const [contentType, setContentType] = useState("general");
+  const [language, setLanguage] = useState("nl");
+  const [ageCategory, setAgeCategory] = useState("all");
+  const [audience, setAudience] = useState<string[]>(["all"]);
+  const [submitting, setSubmitting] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function pickFile(f: File | null) {
+    setFile(f);
+    if (f && !title) {
+      // auto-title from filename without extension
+      setTitle(f.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "));
+    }
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f) pickFile(f);
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!file || !title.trim()) return;
+    setSubmitting(true);
+    setBusy(true);
+    try {
+      const r = await uploadFile(file, {
+        title: title.trim(),
+        content_type: contentType,
+        audience,
+        age_category: ageCategory,
+        language,
+      });
+      toast("ok", `Geüpload: ${r.id} · ${r.chunk_count} chunks.`);
+      setFile(null);
+      setTitle("");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      onAdded();
+    } catch (e) {
+      toast("err", `Upload mislukt: ${(e as Error).message}`);
+    } finally {
+      setSubmitting(false);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card title="Bestand uploaden" icon={<Upload className="h-[15px] w-[15px]" />}>
+      <form onSubmit={submit} className="space-y-3">
+        <label
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={onDrop}
+          className={cn(
+            "block cursor-pointer rounded-[10px] border-2 border-dashed px-4 py-7 text-center transition-colors",
+            dragging ? "border-accent bg-accent-soft" : "border-line bg-bg-3 hover:border-line-3",
+          )}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.html,.htm,.md,.txt"
+            className="sr-only"
+            onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
+          />
+          {file ? (
+            <div>
+              <div className="font-medium text-fg">{file.name}</div>
+              <div className="mt-1 text-[12px] text-fg-3">{formatBytes(file.size)}</div>
+            </div>
+          ) : (
+            <div className="text-fg-3">
+              <Upload className="mx-auto mb-2 h-5 w-5" />
+              <div className="text-[14px]">Sleep een bestand hierheen of klik om te kiezen</div>
+              <div className="mt-1 text-[11.5px] text-fg-4">PDF, HTML, MD, TXT</div>
+            </div>
+          )}
+        </label>
+        <Input label="Titel" value={title} onChange={setTitle} placeholder="Bijv. Te jong te snel" required />
+        <MetadataFields
+          contentType={contentType} setContentType={setContentType}
+          language={language} setLanguage={setLanguage}
+          ageCategory={ageCategory} setAgeCategory={setAgeCategory}
+          audience={audience} setAudience={setAudience}
+        />
+        <button
+          type="submit"
+          disabled={disabled || submitting || !file || !title.trim()}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-[8px] bg-accent px-4 py-2.5 text-[14px] font-semibold text-accent-ink hover:bg-accent-2 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {submitting ? <Loader2 className="h-[14px] w-[14px] animate-spin" /> : <Plus className="h-[14px] w-[14px]" />}
+          Upload + ingest
+        </button>
+      </form>
+    </Card>
+  );
+}
+
+function Card({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="rounded-[14px] border border-line bg-bg-3 p-5">
+      <div className="mb-4 flex items-center gap-2 text-[14px] font-semibold text-fg">
+        <span className="text-accent">{icon}</span>
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Input({
+  label, value, onChange, placeholder, required, type = "text",
+}: {
+  label: string; value: string; onChange: (v: string) => void;
+  placeholder?: string; required?: boolean; type?: string;
+}) {
+  return (
+    <label className="block">
+      <div className="mb-1 text-[11px] font-medium uppercase tracking-[0.12em] text-fg-4">{label}</div>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        required={required}
+        className="w-full rounded-[8px] border border-line bg-bg-2 px-3 py-2 text-[14px] text-fg outline-none placeholder:text-fg-4 focus:border-line-3"
+      />
+    </label>
+  );
+}
+
+function Select({
+  label, value, onChange, options,
+}: {
+  label: string; value: string; onChange: (v: string) => void; options: string[];
+}) {
+  return (
+    <label className="block">
+      <div className="mb-1 text-[11px] font-medium uppercase tracking-[0.12em] text-fg-4">{label}</div>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-[8px] border border-line bg-bg-2 px-3 py-2 text-[14px] text-fg outline-none focus:border-line-3"
+      >
+        {options.map((o) => (
+          <option key={o} value={o}>{o}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function MultiSelect({
+  label, values, onChange, options,
+}: {
+  label: string; values: string[]; onChange: (v: string[]) => void; options: string[];
+}) {
+  function toggle(opt: string) {
+    onChange(values.includes(opt) ? values.filter((v) => v !== opt) : [...values, opt]);
+  }
+  return (
+    <label className="block">
+      <div className="mb-1 text-[11px] font-medium uppercase tracking-[0.12em] text-fg-4">{label}</div>
+      <div className="flex flex-wrap gap-1">
+        {options.map((o) => {
+          const selected = values.includes(o);
+          return (
+            <button
+              type="button"
+              key={o}
+              onClick={() => toggle(o)}
+              className={cn(
+                "rounded-md border px-2 py-0.5 text-[12px] transition-colors",
+                selected
+                  ? "border-accent-edge bg-accent-soft text-accent"
+                  : "border-line bg-bg-2 text-fg-3 hover:border-line-3 hover:text-fg",
+              )}
+            >
+              {o}
+            </button>
+          );
+        })}
+      </div>
+    </label>
+  );
+}
+
+function ToastStack({ toasts }: { toasts: Toast[] }) {
+  return (
+    <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          role="status"
+          className={cn(
+            "pointer-events-auto rounded-[10px] border bg-bg-3 px-4 py-2.5 text-[13.5px] shadow-elev",
+            t.kind === "ok" ? "border-line text-fg" : "border-[#f06c5d]/30 text-[#f06c5d]",
+          )}
+        >
+          {t.text}
+        </div>
+      ))}
+    </div>
+  );
+}

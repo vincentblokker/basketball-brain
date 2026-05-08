@@ -18,5 +18,10 @@ class Settings(BaseSettings):
     default_tenant: str = "public"
     log_level: str = "INFO"
 
+    # Admin upload UI — bearer token check on /admin/* endpoints.
+    # Generate a random one with: openssl rand -hex 32
+    admin_token: str = ""
+    raw_dir: str = "./data/raw"
+
 
 settings = Settings()

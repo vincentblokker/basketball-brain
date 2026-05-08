@@ -10,10 +10,10 @@ services:
       - ../api/.env
     volumes:
       - chroma_data:/app/chroma
-      # Bind-mount raw data so new sources can be added without rebuilding.
+      # Bind-mount raw data — writable so /admin endpoints can upload + delete.
       # Files dropped into host's api/data/raw/ are immediately visible inside
       # the container at /app/data/raw/ (and /app/api/data/raw/ via symlink).
-      - ../api/data/raw:/app/data/raw:ro
+      - ../api/data/raw:/app/data/raw
     # Bind to localhost only — host Caddy proxies to 127.0.0.1:8000
     ports:
       - "127.0.0.1:8000:8000"

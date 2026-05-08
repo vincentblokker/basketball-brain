@@ -60,6 +60,22 @@ class ChromaStore:
     def count(self) -> int:
         return self.collection.count()
 
+    def count_by_source(self, source_id: str, tenant_id: str = "public") -> int:
+        result = self.collection.get(
+            where={"$and": [{"tenant_id": tenant_id}, {"source_id": source_id}]}
+        )
+        return len(result["ids"])
+
+    def delete_by_source(self, source_id: str, tenant_id: str = "public") -> int:
+        """Delete all chunks for a source. Returns deleted count."""
+        result = self.collection.get(
+            where={"$and": [{"tenant_id": tenant_id}, {"source_id": source_id}]}
+        )
+        ids = result["ids"]
+        if ids:
+            self.collection.delete(ids=ids)
+        return len(ids)
+
     @staticmethod
     def _embed_text(c: Chunk) -> str:
         if c.contextual_prefix:
