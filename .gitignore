@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# Data
+api/data/raw/
+api/data/processed/
+api/chroma/
+
+# Env
+.env
+*.env.local
+
+# Node
+node_modules/
+.next/
+out/
+
+# OS
+.DS_Store
