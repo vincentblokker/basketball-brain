@@ -2,8 +2,8 @@ export type Citation = {
   source_id: string;
   title: string;
   url: string;
-  section: string | null;
-  page: number | null;
+  section?: string | null;
+  page?: number | null;
   chunk_id: string;
 };
 
@@ -21,5 +21,6 @@ export type Chunk = {
 export type QueryResponse = {
   answer: string;
   citations: Citation[];
-  retrieved_chunks: Chunk[];
+  retrieved_chunks?: Chunk[];
+  out_of_scope?: boolean;
 };
