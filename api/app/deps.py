@@ -5,6 +5,7 @@ from app.config import settings
 from app.retrieval.chroma_store import ChromaStore
 
 if TYPE_CHECKING:
+    from app.admin.jobs import JobsManager
     from app.generation.llm import LLMGenerator
     from app.retrieval.bm25_index import BM25Index
 
@@ -25,3 +26,9 @@ def get_bm25() -> "BM25Index":
     """Builds BM25 index from all chunks in the store. Rebuilt at startup."""
     from app.retrieval.bm25_index import BM25Index
     return BM25Index(get_store().all_chunks())
+
+
+@lru_cache(maxsize=1)
+def get_jobs() -> "JobsManager":
+    from app.admin.jobs import JobsManager
+    return JobsManager()

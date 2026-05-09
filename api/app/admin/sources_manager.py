@@ -1,6 +1,7 @@
 """Source CRUD over the manifest file + raw data dir + Chroma."""
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,8 @@ import httpx
 from app.ingest.pipeline import ingest_corpus
 from app.retrieval.chroma_store import ChromaStore
 from app.schemas import SourceManifestEntry
+
+StageCallback = Callable[[str, int, str], None]
 
 
 def slugify(text: str) -> str:
@@ -66,10 +69,10 @@ class SourcesManager:
         audience: list[str] | None = None,
         age_category: str = "all",
         language: str = "nl",
+        on_stage: StageCallback | None = None,
     ) -> dict[str, Any]:
         """Fetch a URL, save the body, register in manifest, ingest. Returns {id, chunk_count}."""
         slug = slugify(title)
-        # Make id unique within manifest
         existing_ids = {e["id"] for e in self._read_manifest()}
         idx = 2
         unique_id = slug
@@ -77,7 +80,9 @@ class SourcesManager:
             unique_id = f"{slug}-{idx}"
             idx += 1
 
-        # Fetch (follow redirects, mild user-agent)
+        if on_stage:
+            on_stage("fetching", 10, f"URL ophalen: {url[:60]}")
+
         with httpx.Client(follow_redirects=True, timeout=60.0) as client:
             resp = client.get(
                 url,
@@ -91,6 +96,9 @@ class SourcesManager:
         file_path = self.raw_dir / filename
         file_path.write_bytes(body)
 
+        if on_stage:
+            on_stage("saved", 20, f"{len(body):,} bytes opgeslagen")
+
         entry = {
             "id": unique_id,
             "file": filename,
@@ -102,7 +110,7 @@ class SourcesManager:
             "url": url,
             "source_type": "primary",
         }
-        return self._register_and_ingest(entry)
+        return self._register_and_ingest(entry, on_stage=on_stage)
 
     def add_file(
         self,
@@ -114,6 +122,7 @@ class SourcesManager:
         age_category: str = "all",
         language: str = "nl",
         source_url: str = "",
+        on_stage: StageCallback | None = None,
     ) -> dict[str, Any]:
         """Save uploaded bytes to disk, register, ingest."""
         slug = slugify(title)
@@ -132,6 +141,9 @@ class SourcesManager:
         file_path = self.raw_dir / target_filename
         file_path.write_bytes(body)
 
+        if on_stage:
+            on_stage("saved", 20, f"{len(body):,} bytes opgeslagen")
+
         entry = {
             "id": unique_id,
             "file": target_filename,
@@ -143,7 +155,7 @@ class SourcesManager:
             "url": source_url or "n/a",
             "source_type": "primary",
         }
-        return self._register_and_ingest(entry)
+        return self._register_and_ingest(entry, on_stage=on_stage)
 
     def delete_source(self, source_id: str) -> dict[str, Any]:
         """Remove from manifest, delete file, drop chunks from Chroma."""
@@ -168,7 +180,9 @@ class SourcesManager:
 
         return {"id": source_id, "chunks_deleted": chunks_deleted}
 
-    def reingest(self, source_id: str) -> dict[str, Any]:
+    def reingest(
+        self, source_id: str, on_stage: StageCallback | None = None
+    ) -> dict[str, Any]:
         """Wipe a source's chunks and re-ingest just that source."""
         manifest = self._read_manifest()
         entry = next((e for e in manifest if e["id"] == source_id), None)
@@ -176,20 +190,20 @@ class SourcesManager:
             raise KeyError(source_id)
 
         self.store.delete_by_source(source_id)
-        return self._ingest_only(entry)
+        return self._ingest_only(entry, on_stage=on_stage)
 
     # ---- internals ----
 
-    def _register_and_ingest(self, entry: dict[str, Any]) -> dict[str, Any]:
-        """Append to manifest + ingest. Rolls back manifest, file, and any
-        partial chunks if ingestion fails — leaves no orphans."""
+    def _register_and_ingest(
+        self, entry: dict[str, Any], on_stage: StageCallback | None = None
+    ) -> dict[str, Any]:
+        """Append to manifest + ingest. Rolls back on failure — no orphans."""
         manifest = self._read_manifest()
         manifest.append(entry)
         self._write_manifest(manifest)
         try:
-            return self._ingest_only(entry)
+            return self._ingest_only(entry, on_stage=on_stage)
         except Exception:
-            # rollback: remove manifest entry, delete file, drop partial chunks
             self._write_manifest([e for e in manifest if e["id"] != entry["id"]])
             file_path = self.raw_dir / entry["file"]
             if file_path.exists():
@@ -200,13 +214,15 @@ class SourcesManager:
                 pass  # best-effort
             raise
 
-    def _ingest_only(self, entry: dict[str, Any]) -> dict[str, Any]:
-        # Write a tiny one-entry manifest to disk and ingest just that.
-        # ingest_corpus reads the manifest path; create a temp file alongside.
+    def _ingest_only(
+        self, entry: dict[str, Any], on_stage: StageCallback | None = None
+    ) -> dict[str, Any]:
         tmp_manifest = self.raw_dir / f".manifest-only-{entry['id']}.json"
         tmp_manifest.write_text(json.dumps([entry]))
         try:
-            count = ingest_corpus(self.raw_dir, tmp_manifest, self.store)
+            count = ingest_corpus(
+                self.raw_dir, tmp_manifest, self.store, on_stage=on_stage
+            )
         finally:
             if tmp_manifest.exists():
                 tmp_manifest.unlink()
@@ -219,7 +235,6 @@ class SourcesManager:
         if not raw.strip():
             return []
         data: list[dict[str, Any]] = json.loads(raw)
-        # validate against schema
         for entry in data:
             SourceManifestEntry(**entry)
         return data

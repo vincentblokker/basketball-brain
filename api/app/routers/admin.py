@@ -2,21 +2,21 @@
 from pathlib import Path
 from typing import Any
 
-import httpx
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from app.admin.auth import require_admin
+from app.admin.jobs import JobsManager
 from app.admin.sources_manager import SourcesManager
 from app.config import settings
-from app.deps import get_bm25, get_store
-from app.retrieval.bm25_index import BM25Index
+from app.deps import get_bm25, get_jobs, get_store
 from app.retrieval.chroma_store import ChromaStore
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 _AdminDep = Depends(require_admin)
 _StoreDep = Depends(get_store)
+_JobsDep = Depends(get_jobs)
 
 
 def _manager(store: ChromaStore) -> SourcesManager:
@@ -26,6 +26,12 @@ def _manager(store: ChromaStore) -> SourcesManager:
 def _rebuild_bm25() -> None:
     """Drop the cached BM25 index so the next /query rebuilds it."""
     get_bm25.cache_clear()
+
+
+def _make_callback(jobs: JobsManager, job_id: str):
+    def cb(stage: str, pct: int, message: str) -> None:
+        jobs.update(job_id, stage=stage, progress=pct, message=message)
+    return cb
 
 
 class AddUrlRequest(BaseModel):
@@ -48,8 +54,29 @@ def list_sources(store: ChromaStore = _StoreDep) -> dict[str, Any]:
     return {"sources": _manager(store).list_sources()}
 
 
-@router.post("/sources/url", dependencies=[_AdminDep])
-def add_url(req: AddUrlRequest, store: ChromaStore = _StoreDep) -> dict[str, Any]:
+@router.get("/jobs/{job_id}", dependencies=[_AdminDep])
+def get_job(job_id: str, jobs: JobsManager = _JobsDep) -> dict[str, Any]:
+    job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job.to_dict()
+
+
+@router.get("/jobs", dependencies=[_AdminDep])
+def list_jobs(jobs: JobsManager = _JobsDep) -> dict[str, Any]:
+    return {"jobs": [j.to_dict() for j in jobs.list_recent()]}
+
+
+# ---- ingest endpoints (return job_id immediately, work in background) ----
+
+
+def _run_url_job(
+    job_id: str,
+    req: AddUrlRequest,
+    store: ChromaStore,
+    jobs: JobsManager,
+) -> None:
+    cb = _make_callback(jobs, job_id)
     try:
         result = _manager(store).add_url(
             url=req.url,
@@ -58,15 +85,110 @@ def add_url(req: AddUrlRequest, store: ChromaStore = _StoreDep) -> dict[str, Any
             audience=req.audience,
             age_category=req.age_category,
             language=req.language,
+            on_stage=cb,
         )
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=400, detail=f"Failed to fetch URL: {e}") from e
-    _rebuild_bm25()
-    return result
+        jobs.update(
+            job_id,
+            status="done",
+            stage="done",
+            progress=100,
+            message=f"{result['chunk_count']} chunks geïndexeerd",
+            source_id=result["id"],
+            chunk_count=result["chunk_count"],
+        )
+        _rebuild_bm25()
+    except Exception as e:
+        jobs.update(
+            job_id, status="error", stage="error", progress=0,
+            message=str(e), error=str(e),
+        )
 
 
-@router.post("/sources/upload", dependencies=[_AdminDep])
+def _run_upload_job(
+    job_id: str,
+    *,
+    filename: str,
+    body: bytes,
+    title: str,
+    content_type: str,
+    audience: list[str],
+    age_category: str,
+    language: str,
+    source_url: str,
+    store: ChromaStore,
+    jobs: JobsManager,
+) -> None:
+    cb = _make_callback(jobs, job_id)
+    try:
+        result = _manager(store).add_file(
+            filename=filename,
+            body=body,
+            title=title,
+            content_type=content_type,
+            audience=audience,
+            age_category=age_category,
+            language=language,
+            source_url=source_url,
+            on_stage=cb,
+        )
+        jobs.update(
+            job_id,
+            status="done",
+            stage="done",
+            progress=100,
+            message=f"{result['chunk_count']} chunks geïndexeerd",
+            source_id=result["id"],
+            chunk_count=result["chunk_count"],
+        )
+        _rebuild_bm25()
+    except Exception as e:
+        jobs.update(
+            job_id, status="error", stage="error", progress=0,
+            message=str(e), error=str(e),
+        )
+
+
+def _run_reingest_job(
+    job_id: str,
+    source_id: str,
+    store: ChromaStore,
+    jobs: JobsManager,
+) -> None:
+    cb = _make_callback(jobs, job_id)
+    try:
+        result = _manager(store).reingest(source_id, on_stage=cb)
+        jobs.update(
+            job_id,
+            status="done",
+            stage="done",
+            progress=100,
+            message=f"{result['chunk_count']} chunks geïndexeerd",
+            source_id=result["id"],
+            chunk_count=result["chunk_count"],
+        )
+        _rebuild_bm25()
+    except Exception as e:
+        jobs.update(
+            job_id, status="error", stage="error", progress=0,
+            message=str(e), error=str(e),
+        )
+
+
+@router.post("/sources/url", dependencies=[_AdminDep], status_code=202)
+def add_url(
+    req: AddUrlRequest,
+    background_tasks: BackgroundTasks,
+    store: ChromaStore = _StoreDep,
+    jobs: JobsManager = _JobsDep,
+) -> dict[str, str]:
+    job = jobs.create(kind="url")
+    background_tasks.add_task(_run_url_job, job.id, req, store, jobs)
+    return {"job_id": job.id}
+
+
+@router.post("/sources/upload", dependencies=[_AdminDep], status_code=202)
 async def upload_file(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     title: str = Form(...),
     content_type: str = Form("general"),
@@ -75,23 +197,25 @@ async def upload_file(
     language: str = Form("nl"),
     source_url: str = Form(""),
     store: ChromaStore = _StoreDep,
-) -> dict[str, Any]:
+    jobs: JobsManager = _JobsDep,
+) -> dict[str, str]:
     body = await file.read()
-    try:
-        result = _manager(store).add_file(
-            filename=file.filename or "upload.bin",
-            body=body,
-            title=title,
-            content_type=content_type,
-            audience=[a.strip() for a in audience.split(",") if a.strip()],
-            age_category=age_category,
-            language=language,
-            source_url=source_url,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    _rebuild_bm25()
-    return result
+    job = jobs.create(kind="upload")
+    background_tasks.add_task(
+        _run_upload_job,
+        job.id,
+        filename=file.filename or "upload.bin",
+        body=body,
+        title=title,
+        content_type=content_type,
+        audience=[a.strip() for a in audience.split(",") if a.strip()],
+        age_category=age_category,
+        language=language,
+        source_url=source_url,
+        store=store,
+        jobs=jobs,
+    )
+    return {"job_id": job.id}
 
 
 @router.delete("/sources/{source_id}", dependencies=[_AdminDep])
@@ -104,15 +228,18 @@ def delete_source(source_id: str, store: ChromaStore = _StoreDep) -> dict[str, A
     return result
 
 
-@router.post("/sources/{source_id}/reingest", dependencies=[_AdminDep])
-def reingest_source(source_id: str, store: ChromaStore = _StoreDep) -> dict[str, Any]:
+@router.post("/sources/{source_id}/reingest", dependencies=[_AdminDep], status_code=202)
+def reingest_source(
+    source_id: str,
+    background_tasks: BackgroundTasks,
+    store: ChromaStore = _StoreDep,
+    jobs: JobsManager = _JobsDep,
+) -> dict[str, str]:
+    # Verify the source exists upfront so we can 404 synchronously
     try:
-        result = _manager(store).reingest(source_id)
-    except KeyError as e:
-        raise HTTPException(status_code=404, detail=f"Source not found: {source_id}") from e
-    _rebuild_bm25()
-    return result
-
-
-# Suppress unused-import warning — BM25Index is needed for type signatures elsewhere
-_BM25_HINT = BM25Index
+        _manager(store)._read_manifest()  # noqa: SLF001 — internal check
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Manifest read error: {e}") from e
+    job = jobs.create(kind="reingest")
+    background_tasks.add_task(_run_reingest_job, job.id, source_id, store, jobs)
+    return {"job_id": job.id}

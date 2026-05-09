@@ -24,6 +24,20 @@ export type AddUrlInput = {
   language: string;
 };
 
+export type Job = {
+  id: string;
+  kind: "url" | "upload" | "reingest";
+  status: "running" | "done" | "error";
+  stage: string;
+  progress: number;
+  message: string;
+  source_id: string | null;
+  chunk_count: number | null;
+  error: string | null;
+  started_at: number;
+  updated_at: number;
+};
+
 const STORAGE_KEY = "bbrain.admin.token";
 
 export const adminToken = {
@@ -71,19 +85,19 @@ export async function listSources(): Promise<Source[]> {
   return data.sources;
 }
 
-export async function addUrl(input: AddUrlInput): Promise<{ id: string; chunk_count: number }> {
+export async function addUrl(input: AddUrlInput): Promise<{ job_id: string }> {
   const res = await fetch(`${API_BASE}/admin/sources/url`, {
     method: "POST",
     headers: { ...authHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  return (await check(res)) as { id: string; chunk_count: number };
+  return (await check(res)) as { job_id: string };
 }
 
 export async function uploadFile(
   file: File,
   meta: Omit<AddUrlInput, "url"> & { source_url?: string },
-): Promise<{ id: string; chunk_count: number }> {
+): Promise<{ job_id: string }> {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("title", meta.title);
@@ -97,7 +111,7 @@ export async function uploadFile(
     headers: authHeaders(),
     body: fd,
   });
-  return (await check(res)) as { id: string; chunk_count: number };
+  return (await check(res)) as { job_id: string };
 }
 
 export async function deleteSource(id: string): Promise<{ id: string; chunks_deleted: number }> {
@@ -108,16 +122,65 @@ export async function deleteSource(id: string): Promise<{ id: string; chunks_del
   return (await check(res)) as { id: string; chunks_deleted: number };
 }
 
-export async function reingestSource(id: string): Promise<{ id: string; chunk_count: number }> {
+export async function reingestSource(id: string): Promise<{ job_id: string }> {
   const res = await fetch(`${API_BASE}/admin/sources/${encodeURIComponent(id)}/reingest`, {
     method: "POST",
     headers: authHeaders(),
   });
-  return (await check(res)) as { id: string; chunk_count: number };
+  return (await check(res)) as { job_id: string };
+}
+
+export async function getJob(jobId: string): Promise<Job> {
+  const res = await fetch(`${API_BASE}/admin/jobs/${encodeURIComponent(jobId)}`, {
+    headers: authHeaders(),
+  });
+  return (await check(res)) as Job;
+}
+
+/** Poll a job to completion. Calls onUpdate with each new state.
+ *  Resolves with final job state when status != "running". */
+export async function pollJob(
+  jobId: string,
+  onUpdate: (job: Job) => void,
+  intervalMs = 1500,
+  maxDurationMs = 30 * 60 * 1000,
+): Promise<Job> {
+  const start = Date.now();
+  while (Date.now() - start < maxDurationMs) {
+    let job: Job;
+    try {
+      job = await getJob(jobId);
+    } catch (e) {
+      // transient — retry once after delay
+      await new Promise((r) => setTimeout(r, intervalMs));
+      continue;
+    }
+    onUpdate(job);
+    if (job.status !== "running") {
+      return job;
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  throw new Error("Job poll timed out");
 }
 
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+export function stageLabel(stage: string): string {
+  const map: Record<string, string> = {
+    starting: "Voorbereiden…",
+    fetching: "URL ophalen",
+    saved: "Opgeslagen",
+    loading: "Tekst lezen",
+    chunking: "Chunks maken",
+    embedding: "Embeddings berekenen",
+    indexing: "Indexeren",
+    done: "Klaar",
+    error: "Fout",
+  };
+  return map[stage] ?? stage;
 }

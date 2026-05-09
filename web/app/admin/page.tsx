@@ -8,6 +8,7 @@ import { BasketballMark } from "@/components/marks";
 import { cn } from "@/lib/utils";
 import {
   type AddUrlInput,
+  type Job,
   type Source,
   addUrl,
   adminToken,
@@ -15,7 +16,9 @@ import {
   deleteSource,
   formatBytes,
   listSources,
+  pollJob,
   reingestSource,
+  stageLabel,
   uploadFile,
 } from "@/lib/admin-api";
 
@@ -26,12 +29,16 @@ const AUDIENCES = ["all", "coach", "referee", "parent", "player"] as const;
 
 type Toast = { id: number; kind: "ok" | "err"; text: string };
 
+/** A live job being tracked in the UI. */
+type ActiveJob = Job & { label: string };
+
 export default function AdminPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [tokenInput, setTokenInput] = useState("");
   const [sources, setSources] = useState<Source[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [activeJobs, setActiveJobs] = useState<ActiveJob[]>([]);
 
   const toast = useCallback((kind: Toast["kind"], text: string) => {
     const id = Date.now() + Math.random();
@@ -52,11 +59,6 @@ export default function AdminPage() {
     })();
   }, []);
 
-  useEffect(() => {
-    if (!authed) return;
-    void refresh();
-  }, [authed]);
-
   const refresh = useCallback(async () => {
     try {
       setSources(await listSources());
@@ -64,6 +66,42 @@ export default function AdminPage() {
       toast("err", `Kon bronnen niet laden: ${(e as Error).message}`);
     }
   }, [toast]);
+
+  useEffect(() => {
+    if (!authed) return;
+    void refresh();
+  }, [authed, refresh]);
+
+  /** Track a job: poll until done/error, update progress, refresh list, clean up. */
+  const trackJob = useCallback(
+    async (jobId: string, label: string) => {
+      setActiveJobs((j) => [...j, {
+        id: jobId, kind: "url", status: "running", stage: "starting",
+        progress: 0, message: "", source_id: null, chunk_count: null,
+        error: null, started_at: 0, updated_at: 0, label,
+      }]);
+      try {
+        const final = await pollJob(jobId, (job) => {
+          setActiveJobs((all) => all.map((j) => (j.id === jobId ? { ...j, ...job, label } : j)));
+        });
+        if (final.status === "done") {
+          toast("ok", `${label}: ${final.chunk_count ?? "?"} chunks geïndexeerd`);
+        } else {
+          toast("err", `${label} mislukt: ${final.error ?? final.message}`);
+        }
+      } catch (e) {
+        toast("err", `${label}: ${(e as Error).message}`);
+      } finally {
+        // Keep terminal state visible briefly, then remove
+        setTimeout(() => {
+          setActiveJobs((all) => all.filter((j) => j.id !== jobId));
+          void refresh();
+        }, 2000);
+        void refresh();
+      }
+    },
+    [toast, refresh],
+  );
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -101,12 +139,11 @@ export default function AdminPage() {
     }
   }
 
-  async function handleReingest(id: string) {
+  async function handleReingest(source: Source) {
     setBusy(true);
     try {
-      const r = await reingestSource(id);
-      toast("ok", `Heringest. ${r.chunk_count} chunks.`);
-      await refresh();
+      const { job_id } = await reingestSource(source.id);
+      void trackJob(job_id, `Reingest: ${source.title}`);
     } catch (e) {
       toast("err", `Reingest mislukt: ${(e as Error).message}`);
     } finally {
@@ -178,6 +215,14 @@ export default function AdminPage() {
           </button>
         </div>
 
+        {activeJobs.length > 0 && (
+          <div className="mb-6 space-y-3">
+            {activeJobs.map((j) => (
+              <ProgressBar key={j.id} job={j} />
+            ))}
+          </div>
+        )}
+
         <SourcesTable
           sources={sources}
           busy={busy}
@@ -188,13 +233,13 @@ export default function AdminPage() {
         <div className="my-12 grid grid-cols-1 gap-6 md:grid-cols-2">
           <AddUrlCard
             disabled={busy}
-            onAdded={() => void refresh()}
+            trackJob={trackJob}
             setBusy={setBusy}
             toast={toast}
           />
           <UploadCard
             disabled={busy}
-            onAdded={() => void refresh()}
+            trackJob={trackJob}
             setBusy={setBusy}
             toast={toast}
           />
@@ -240,6 +285,43 @@ function Layout({ children, onLogout }: { children: React.ReactNode; onLogout?: 
   );
 }
 
+function ProgressBar({ job }: { job: ActiveJob }) {
+  const isError = job.status === "error";
+  const isDone = job.status === "done";
+  const pct = isDone ? 100 : job.progress;
+  return (
+    <div
+      className={cn(
+        "rounded-[12px] border p-4",
+        isError ? "border-[#f06c5d]/40 bg-[#f06c5d]/5" : "border-line bg-bg-3",
+      )}
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="flex items-center gap-2 text-[13.5px] font-medium text-fg">
+          {!isDone && !isError && <Loader2 className="h-[13px] w-[13px] animate-spin text-accent" />}
+          {job.label}
+        </div>
+        <div className="font-mono text-[11px] text-fg-3">{pct}%</div>
+      </div>
+      <div className="mt-2 h-1 overflow-hidden rounded-full bg-bg-4">
+        <div
+          className={cn(
+            "h-full transition-all duration-300 ease-out",
+            isError ? "bg-[#f06c5d]" : "bg-accent",
+          )}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <div className="mt-2 flex items-baseline justify-between gap-3 text-[12px] text-fg-3">
+        <span className="font-mono uppercase tracking-[0.1em] text-fg-4">
+          {stageLabel(job.stage)}
+        </span>
+        <span className="truncate">{job.message}</span>
+      </div>
+    </div>
+  );
+}
+
 function SourcesTable({
   sources,
   busy,
@@ -249,7 +331,7 @@ function SourcesTable({
   sources: Source[] | null;
   busy: boolean;
   onDelete: (id: string) => void;
-  onReingest: (id: string) => void;
+  onReingest: (s: Source) => void;
 }) {
   if (sources === null) {
     return <div className="text-fg-3">Laden…</div>;
@@ -297,7 +379,7 @@ function SourcesTable({
                 <td className="px-5 py-3 align-top text-right">
                   <div className="inline-flex items-center gap-1">
                     <button
-                      onClick={() => onReingest(s.id)}
+                      onClick={() => onReingest(s)}
                       disabled={busy || !s.file_exists}
                       title="Heringest deze bron"
                       className="rounded-md p-1.5 text-fg-3 hover:bg-bg-4 hover:text-fg disabled:opacity-30"
@@ -345,10 +427,10 @@ function MetadataFields({
 }
 
 function AddUrlCard({
-  disabled, onAdded, setBusy, toast,
+  disabled, trackJob, setBusy, toast,
 }: {
   disabled: boolean;
-  onAdded: () => void;
+  trackJob: (jobId: string, label: string) => Promise<void>;
   setBusy: (b: boolean) => void;
   toast: (kind: Toast["kind"], text: string) => void;
 }) {
@@ -374,11 +456,10 @@ function AddUrlCard({
         age_category: ageCategory,
         language,
       };
-      const r = await addUrl(input);
-      toast("ok", `Toegevoegd: ${r.id} · ${r.chunk_count} chunks.`);
+      const { job_id } = await addUrl(input);
+      void trackJob(job_id, `URL: ${title.trim()}`);
       setUrl("");
       setTitle("");
-      onAdded();
     } catch (e) {
       toast("err", `URL toevoegen mislukt: ${(e as Error).message}`);
     } finally {
@@ -412,10 +493,10 @@ function AddUrlCard({
 }
 
 function UploadCard({
-  disabled, onAdded, setBusy, toast,
+  disabled, trackJob, setBusy, toast,
 }: {
   disabled: boolean;
-  onAdded: () => void;
+  trackJob: (jobId: string, label: string) => Promise<void>;
   setBusy: (b: boolean) => void;
   toast: (kind: Toast["kind"], text: string) => void;
 }) {
@@ -432,7 +513,6 @@ function UploadCard({
   function pickFile(f: File | null) {
     setFile(f);
     if (f && !title) {
-      // auto-title from filename without extension
       setTitle(f.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "));
     }
   }
@@ -450,18 +530,17 @@ function UploadCard({
     setSubmitting(true);
     setBusy(true);
     try {
-      const r = await uploadFile(file, {
+      const { job_id } = await uploadFile(file, {
         title: title.trim(),
         content_type: contentType,
         audience,
         age_category: ageCategory,
         language,
       });
-      toast("ok", `Geüpload: ${r.id} · ${r.chunk_count} chunks.`);
+      void trackJob(job_id, `Upload: ${title.trim()}`);
       setFile(null);
       setTitle("");
       if (fileInputRef.current) fileInputRef.current.value = "";
-      onAdded();
     } catch (e) {
       toast("err", `Upload mislukt: ${(e as Error).message}`);
     } finally {

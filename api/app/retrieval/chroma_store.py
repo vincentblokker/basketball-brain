@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Any
 
 import chromadb
@@ -5,6 +6,9 @@ from chromadb.api.models.Collection import Collection
 
 from app.retrieval.embeddings import Embedder
 from app.schemas import Chunk
+
+ProgressCallback = Callable[[int, int], None]
+"""Callable signature: (done_count, total_count) -> None"""
 
 
 class ChromaStore:
@@ -19,17 +23,32 @@ class ChromaStore:
         )
         self.embedder = Embedder()
 
-    def add(self, chunks: list[Chunk]) -> None:
+    def add(
+        self,
+        chunks: list[Chunk],
+        on_progress: ProgressCallback | None = None,
+        batch_size: int = 32,
+    ) -> None:
+        """Embed + upsert chunks. Optionally reports progress per batch.
+
+        Embeddings are computed in batches to (a) keep memory bounded
+        and (b) emit progress events at meaningful intervals.
+        """
         if not chunks:
             return
-        texts = [self._embed_text(c) for c in chunks]
-        embeddings = self.embedder.embed(texts).tolist()
-        self.collection.add(
-            ids=[c.chunk_id for c in chunks],
-            embeddings=embeddings,
-            documents=[c.text for c in chunks],
-            metadatas=[self._metadata(c) for c in chunks],
-        )
+        total = len(chunks)
+        for start in range(0, total, batch_size):
+            batch = chunks[start : start + batch_size]
+            texts = [self._embed_text(c) for c in batch]
+            embeddings = self.embedder.embed(texts).tolist()
+            self.collection.add(
+                ids=[c.chunk_id for c in batch],
+                embeddings=embeddings,
+                documents=[c.text for c in batch],
+                metadatas=[self._metadata(c) for c in batch],
+            )
+            if on_progress is not None:
+                on_progress(min(start + batch_size, total), total)
 
     def query(
         self,
