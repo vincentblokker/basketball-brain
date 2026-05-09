@@ -21,6 +21,8 @@ import sys
 # Reuse data + helpers from the original bulk_add_corpus script.
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
+import re
+
 from bulk_add_corpus import (  # noqa: E402
     ALL_NEW,
     REINGEST_IDS,
@@ -30,6 +32,11 @@ from bulk_add_corpus import (  # noqa: E402
 )
 
 
+def _slug(text: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return s[:64] or "source"
+
+
 def main() -> None:
     print("=" * 60)
     print("BULK RESUME — fetching live source list")
@@ -37,7 +44,7 @@ def main() -> None:
 
     sources = get_json("/admin/sources").get("sources", [])
     by_id = {s["id"]: s for s in sources}
-    by_url = {s.get("url"): s for s in sources if s.get("url")}
+    by_url = {s.get("url"): s for s in sources if s.get("url") and s["url"] != "n/a"}
 
     # Filter REINGEST_IDS — only re-do ones that have 0 chunks
     todo_reingest = []
@@ -48,12 +55,18 @@ def main() -> None:
             continue
         todo_reingest.append(sid)
 
-    # Filter ALL_NEW — skip URLs already ingested with chunks > 0
+    # Filter ALL_NEW — skip if URL OR title-slug-prefix already has chunks > 0
     todo_new = []
     for spec in ALL_NEW:
-        s = by_url.get(spec["url"])
-        if s and s.get("chunk_count", 0) > 0:
-            print(f"  skip url (chunks={s['chunk_count']}): {spec['title'][:60]}")
+        existing = by_url.get(spec["url"])
+        if not existing:
+            slug = _slug(spec["title"])
+            existing = next(
+                (s for s in sources if s["id"].startswith(slug) and s.get("chunk_count", 0) > 0),
+                None,
+            )
+        if existing and existing.get("chunk_count", 0) > 0:
+            print(f"  skip (chunks={existing['chunk_count']}, id={existing['id'][:50]}): {spec['title'][:60]}")
             continue
         todo_new.append(spec)
 
