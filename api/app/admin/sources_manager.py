@@ -253,15 +253,16 @@ class SourcesManager:
         return {"id": entry["id"], "chunk_count": count}
 
     def _read_manifest(self) -> list[dict[str, Any]]:
+        """Returns manifest entries with v2-schema defaults filled in for
+        backward compatibility with v1 entries that lack new fields."""
         if not self.manifest_path.exists():
             return []
         raw = self.manifest_path.read_text()
         if not raw.strip():
             return []
         data: list[dict[str, Any]] = json.loads(raw)
-        for entry in data:
-            SourceManifestEntry(**entry)
-        return data
+        # Round-trip through the model to pick up defaults for any missing fields.
+        return [SourceManifestEntry(**e).model_dump() for e in data]
 
     def _write_manifest(self, entries: list[dict[str, Any]]) -> None:
         self.manifest_path.write_text(json.dumps(entries, indent=2, ensure_ascii=False))
