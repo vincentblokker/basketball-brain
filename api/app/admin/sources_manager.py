@@ -111,10 +111,20 @@ class SourcesManager:
         if on_stage:
             on_stage("fetching", 10, f"URL ophalen: {url[:60]}")
 
-        with httpx.Client(follow_redirects=True, timeout=60.0) as client:
+        # Many CDNs (Jr. NBA's ak-static, Basketball England via Cloudflare)
+        # 403 a non-browser UA. Use a real Chrome UA to maximise compatibility.
+        with httpx.Client(follow_redirects=True, timeout=120.0) as client:
             resp = client.get(
                 url,
-                headers={"User-Agent": "BasketballBrain/0.1 (+https://brain.clubduty.app)"},
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/126.0.0.0 Safari/537.36"
+                    ),
+                    "Accept": "application/pdf,text/html,application/xhtml+xml,*/*",
+                    "Accept-Language": "en-US,en;q=0.9,nl;q=0.8",
+                },
             )
             resp.raise_for_status()
             body = resp.content
