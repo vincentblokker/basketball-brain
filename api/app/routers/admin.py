@@ -255,6 +255,37 @@ async def upload_file(
     return {"job_id": job.id}
 
 
+class UpdateSourceRequest(BaseModel):
+    """Partial update — every field optional. Only known fields applied."""
+    title: str | None = None
+    content_type: str | None = None
+    audience: list[str] | None = None
+    age_category: str | None = None
+    language: str | None = None
+    url: str | None = None
+    authority: str | None = None
+    level: str | None = None
+    topic: str | None = None
+    region: str | None = None
+    ruleset: str | None = None
+
+
+@router.patch("/sources/{source_id}", dependencies=[_AdminDep])
+def update_source(
+    source_id: str,
+    req: UpdateSourceRequest,
+    store: ChromaStore = _StoreDep,
+) -> dict[str, Any]:
+    # Drop fields the caller didn't set so we don't clobber with None.
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    try:
+        result = _manager(store).update_source(source_id, updates)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=f"Source not found: {source_id}") from e
+    _rebuild_bm25()
+    return result
+
+
 @router.delete("/sources/{source_id}", dependencies=[_AdminDep])
 def delete_source(source_id: str, store: ChromaStore = _StoreDep) -> dict[str, Any]:
     try:

@@ -181,6 +181,58 @@ class SourcesManager:
         }
         return self._register_and_ingest(entry, on_stage=on_stage)
 
+    # Fields that can be edited post-ingest. Excludes id, file, source_type,
+    # chunk_type (would require re-chunking).
+    EDITABLE_FIELDS = (
+        "title", "content_type", "audience", "age_category", "language",
+        "url", "authority", "level", "topic", "region", "ruleset",
+    )
+
+    def update_source(self, source_id: str, updates: dict[str, Any]) -> dict[str, Any]:
+        """Update manifest entry + propagate metadata changes to all chunks
+        in Chroma. Only fields in EDITABLE_FIELDS are accepted; unknown or
+        immutable fields are ignored silently.
+
+        Returns the updated entry + chunks-updated count.
+        """
+        manifest = self._read_manifest()
+        idx = next((i for i, e in enumerate(manifest) if e["id"] == source_id), None)
+        if idx is None:
+            raise KeyError(source_id)
+
+        # Filter + apply updates
+        clean_updates: dict[str, Any] = {}
+        for key, value in updates.items():
+            if key in self.EDITABLE_FIELDS:
+                clean_updates[key] = value
+
+        if not clean_updates:
+            return {"id": source_id, "updated_fields": [], "chunks_updated": 0}
+
+        manifest[idx].update(clean_updates)
+        # Re-validate the entry against the model.
+        SourceManifestEntry(**manifest[idx])
+        self._write_manifest(manifest)
+
+        # Propagate to Chroma metadata. Convert audience list → comma string.
+        chroma_updates: dict[str, Any] = {}
+        for k, v in clean_updates.items():
+            if k == "audience":
+                chroma_updates["audience"] = ",".join(v) if isinstance(v, list) else str(v)
+            elif k == "topic":
+                chroma_updates["topic"] = v or ""
+            elif k == "ruleset":
+                chroma_updates["ruleset"] = v or ""
+            else:
+                chroma_updates[k] = v
+        chunks_updated = self.store.update_metadata_by_source(source_id, chroma_updates)
+
+        return {
+            "id": source_id,
+            "updated_fields": list(clean_updates.keys()),
+            "chunks_updated": chunks_updated,
+        }
+
     def delete_source(self, source_id: str) -> dict[str, Any]:
         """Remove from manifest, delete file, drop chunks from Chroma."""
         manifest = self._read_manifest()

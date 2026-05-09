@@ -144,6 +144,32 @@ export async function deleteSource(id: string): Promise<{ id: string; chunks_del
   return (await check(res)) as { id: string; chunks_deleted: number };
 }
 
+export type SourceUpdate = Partial<{
+  title: string;
+  content_type: string;
+  audience: string[];
+  age_category: string;
+  language: string;
+  url: string;
+  authority: Authority;
+  level: Level;
+  topic: string;
+  region: string;
+  ruleset: string;
+}>;
+
+export async function updateSource(
+  id: string,
+  updates: SourceUpdate,
+): Promise<{ id: string; updated_fields: string[]; chunks_updated: number }> {
+  const res = await fetch(`${API_BASE}/admin/sources/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  });
+  return (await check(res)) as { id: string; updated_fields: string[]; chunks_updated: number };
+}
+
 export async function reingestSource(id: string): Promise<{ job_id: string }> {
   const res = await fetch(`${API_BASE}/admin/sources/${encodeURIComponent(id)}/reingest`, {
     method: "POST",

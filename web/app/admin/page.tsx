@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link2, Loader2, LogOut, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
+import { Link2, Loader2, LogOut, Pencil, Plus, RefreshCw, Trash2, Upload, X } from "lucide-react";
 
 import { BasketballMark } from "@/components/marks";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,7 @@ import {
   type AddUrlInput,
   type Job,
   type Source,
+  type SourceUpdate,
   addUrl,
   adminToken,
   checkAuth,
@@ -19,6 +20,7 @@ import {
   pollJob,
   reingestSource,
   stageLabel,
+  updateSource,
   uploadFile,
 } from "@/lib/admin-api";
 
@@ -49,6 +51,7 @@ export default function AdminPage() {
   const [busy, setBusy] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [activeJobs, setActiveJobs] = useState<ActiveJob[]>([]);
+  const [editing, setEditing] = useState<Source | null>(null);
 
   const toast = useCallback((kind: Toast["kind"], text: string) => {
     const id = Date.now() + Math.random();
@@ -161,6 +164,24 @@ export default function AdminPage() {
     }
   }
 
+  async function handleSaveEdit(updates: SourceUpdate) {
+    if (!editing) return;
+    setBusy(true);
+    try {
+      const r = await updateSource(editing.id, updates);
+      toast(
+        "ok",
+        `Bijgewerkt: ${r.updated_fields.length} velden, ${r.chunks_updated} chunks.`,
+      );
+      setEditing(null);
+      await refresh();
+    } catch (e) {
+      toast("err", `Bijwerken mislukt: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (authed === null) {
     return (
       <Layout>
@@ -238,6 +259,7 @@ export default function AdminPage() {
           busy={busy}
           onDelete={handleDelete}
           onReingest={handleReingest}
+          onEdit={setEditing}
         />
 
         <div className="my-12 grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -255,6 +277,14 @@ export default function AdminPage() {
           />
         </div>
       </main>
+      {editing && (
+        <EditModal
+          source={editing}
+          onSave={handleSaveEdit}
+          onCancel={() => setEditing(null)}
+          busy={busy}
+        />
+      )}
       <ToastStack toasts={toasts} />
     </Layout>
   );
@@ -337,11 +367,13 @@ function SourcesTable({
   busy,
   onDelete,
   onReingest,
+  onEdit,
 }: {
   sources: Source[] | null;
   busy: boolean;
   onDelete: (id: string) => void;
   onReingest: (s: Source) => void;
+  onEdit: (s: Source) => void;
 }) {
   if (sources === null) {
     return <div className="text-fg-3">Laden…</div>;
@@ -388,6 +420,14 @@ function SourcesTable({
                 </td>
                 <td className="px-5 py-3 align-top text-right">
                   <div className="inline-flex items-center gap-1">
+                    <button
+                      onClick={() => onEdit(s)}
+                      disabled={busy}
+                      title="Bewerk metadata"
+                      className="rounded-md p-1.5 text-fg-3 hover:bg-bg-4 hover:text-fg disabled:opacity-30"
+                    >
+                      <Pencil className="h-[13px] w-[13px]" />
+                    </button>
                     <button
                       onClick={() => onReingest(s)}
                       disabled={busy || !s.file_exists}
@@ -724,6 +764,111 @@ function MultiSelect({
         })}
       </div>
     </label>
+  );
+}
+
+function EditModal({
+  source,
+  onSave,
+  onCancel,
+  busy,
+}: {
+  source: Source;
+  onSave: (updates: SourceUpdate) => void;
+  onCancel: () => void;
+  busy: boolean;
+}) {
+  const [title, setTitle] = useState(source.title);
+  const [url, setUrl] = useState(source.url);
+  const meta = useMeta();
+
+  // Pre-fill from current source on mount
+  useEffect(() => {
+    meta.setContentType(source.content_type);
+    meta.setLanguage(source.language);
+    meta.setAgeCategory(source.age_category);
+    meta.setAudience(source.audience.length ? source.audience : ["all"]);
+    meta.setAuthority(source.authority ?? "supplementary");
+    meta.setLevel(source.level ?? "n/a");
+    meta.setTopic(source.topic ?? "");
+    meta.setRegion(source.region ?? "international");
+    meta.setRuleset(source.ruleset ?? "");
+    meta.setChunkType(source.chunk_type ?? "prose");
+    // chunkType is editable here for completeness but the backend ignores it
+    // (changing chunker post-ingest needs reingest).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source.id]);
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const updates: SourceUpdate = {
+      title: title.trim(),
+      url: url.trim(),
+      content_type: meta.contentType,
+      audience: meta.audience,
+      age_category: meta.ageCategory,
+      language: meta.language,
+      authority: meta.authority as SourceUpdate["authority"],
+      level: meta.level as SourceUpdate["level"],
+      topic: meta.topic,
+      region: meta.region,
+      ruleset: meta.ruleset,
+    };
+    onSave(updates);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-40 bg-bg/80 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="my-12 w-full max-w-[640px] rounded-[14px] border border-line bg-bg-3 shadow-elev"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
+          <div className="flex items-center gap-2 text-[14px] font-semibold text-fg">
+            <span className="text-accent"><Pencil className="h-[15px] w-[15px]" /></span>
+            Bewerk metadata
+          </div>
+          <button
+            onClick={onCancel}
+            disabled={busy}
+            className="rounded-md p-1.5 text-fg-3 hover:bg-bg-4 hover:text-fg disabled:opacity-30"
+          >
+            <X className="h-[14px] w-[14px]" />
+          </button>
+        </div>
+        <form onSubmit={submit} className="space-y-3 p-5">
+          <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-fg-4">ID</div>
+          <div className="-mt-2 mb-3 font-mono text-[12px] text-fg-3">{source.id}</div>
+          <Input label="Titel" value={title} onChange={setTitle} required />
+          <Input label="URL" value={url} onChange={setUrl} />
+          <MetadataFields {...meta} />
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={busy}
+              className="flex-1 rounded-[8px] border border-line bg-bg-2 px-4 py-2.5 text-[14px] font-medium text-fg-2 hover:border-line-3 hover:text-fg disabled:opacity-40"
+            >
+              Annuleren
+            </button>
+            <button
+              type="submit"
+              disabled={busy || !title.trim()}
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-[8px] bg-accent px-4 py-2.5 text-[14px] font-semibold text-accent-ink hover:bg-accent-2 disabled:opacity-40"
+            >
+              {busy ? <Loader2 className="h-[14px] w-[14px] animate-spin" /> : null}
+              Opslaan
+            </button>
+          </div>
+          <p className="text-[11.5px] text-fg-4">
+            Wijzigingen worden direct toegepast op alle chunks van deze bron in ChromaDB. Geen reingest nodig.
+          </p>
+        </form>
+      </div>
+    </div>
   );
 }
 

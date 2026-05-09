@@ -95,6 +95,34 @@ class ChromaStore:
             self.collection.delete(ids=ids)
         return len(ids)
 
+    def update_metadata_by_source(
+        self,
+        source_id: str,
+        updates: dict[str, Any],
+        tenant_id: str = "public",
+    ) -> int:
+        """Merge ``updates`` into every chunk's metadata for a given source.
+        Preserves chunk-specific fields (chunk_index, page, section, contextual_prefix).
+        Returns number of chunks updated.
+        """
+        if not updates:
+            return 0
+        result = self.collection.get(
+            where={"$and": [{"tenant_id": tenant_id}, {"source_id": source_id}]}
+        )
+        ids: list[str] = result["ids"]
+        if not ids:
+            return 0
+        merged: list[dict[str, Any]] = []
+        for existing in result["metadatas"]:
+            new_meta = dict(existing)
+            for k, v in updates.items():
+                # Chroma rejects None values; substitute empty string.
+                new_meta[k] = "" if v is None else v
+            merged.append(new_meta)
+        self.collection.update(ids=ids, metadatas=merged)
+        return len(ids)
+
     @staticmethod
     def _embed_text(c: Chunk) -> str:
         if c.contextual_prefix:
