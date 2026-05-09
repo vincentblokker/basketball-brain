@@ -5,13 +5,13 @@ from pathlib import Path
 
 from app.ingest.chunker import recursive_chunk
 from app.ingest.page_images import extract_pages
-from app.ingest.pdf_loader import load_text
+from app.ingest.pdf_loader import load_pages
 from app.retrieval.chroma_store import ChromaStore
 from app.schemas import Chunk, SourceManifestEntry
 
 StageCallback = Callable[[str, int, str], None]
 """Callable signature: (stage, percent, message) -> None.
-Stages: loading, chunking, embedding, indexing, done."""
+Stages: loading, pages, chunking, embedding, indexing, done."""
 
 
 def ingest_corpus(
@@ -41,7 +41,9 @@ def ingest_corpus(
             continue
 
         emit("loading", 25, f"{entry.id}: lezen")
-        text = load_text(path)
+        # Page-aware loader: list of {page, text}. PDFs get one entry per
+        # page; HTML/text get a single entry with page=None.
+        pages_data = load_pages(path)
 
         # Render PDF pages as PNGs alongside text-extraction.
         # HTML/text sources skip silently. Failure is non-fatal.
@@ -53,36 +55,50 @@ def ingest_corpus(
                 print(f"Rendered {page_count} page-images for {entry.id}")
 
         emit("chunking", 35, f"{entry.id}: chunks maken")
-        chunk_texts = recursive_chunk(text, chunk_size=chunk_size, overlap=overlap)
-
-        if enricher is not None:
-            prefixes: list[str | None] = list(enricher.enrich_batch(text, chunk_texts))
-        else:
-            prefixes = [None] * len(chunk_texts)
-        chunks = [
-            Chunk(
-                chunk_id=f"{entry.id}-{i}-{uuid.uuid4().hex[:8]}",
-                source_id=entry.id,
-                content_type=entry.content_type,
-                audience=entry.audience,
-                age_category=entry.age_category,
-                language=entry.language,
-                url=entry.url,
-                title=entry.title,
-                chunk_index=i,
-                text=ct,
-                source_type=entry.source_type,
-                contextual_prefix=prefixes[i],
-                # v2 schema — propagate manifest metadata to each chunk
-                authority=entry.authority,
-                level=entry.level,
-                topic=entry.topic,
-                region=entry.region,
-                ruleset=entry.ruleset,
-                chunk_type=entry.chunk_type,
+        # Chunk per page so each chunk knows its page-number. For non-PDF the
+        # single entry is chunked normally and chunks carry page=None.
+        chunks: list[Chunk] = []
+        chunk_index = 0
+        full_text_for_cr = "\n\n".join(p["text"] for p in pages_data)
+        for page_entry in pages_data:
+            page_text = page_entry["text"]
+            page_num = page_entry["page"]
+            if not page_text.strip():
+                continue
+            page_chunk_texts = recursive_chunk(
+                page_text, chunk_size=chunk_size, overlap=overlap,
             )
-            for i, ct in enumerate(chunk_texts)
-        ]
+            for ct in page_chunk_texts:
+                chunks.append(Chunk(
+                    chunk_id=f"{entry.id}-{chunk_index}-{uuid.uuid4().hex[:8]}",
+                    source_id=entry.id,
+                    content_type=entry.content_type,
+                    audience=entry.audience,
+                    age_category=entry.age_category,
+                    language=entry.language,
+                    url=entry.url,
+                    title=entry.title,
+                    page=page_num,
+                    chunk_index=chunk_index,
+                    text=ct,
+                    source_type=entry.source_type,
+                    contextual_prefix=None,  # filled below if CR enabled
+                    authority=entry.authority,
+                    level=entry.level,
+                    topic=entry.topic,
+                    region=entry.region,
+                    ruleset=entry.ruleset,
+                    chunk_type=entry.chunk_type,
+                ))
+                chunk_index += 1
+
+        # Contextual Retrieval — uses the full document as context (cached)
+        # and per-chunk text. Only when enabled.
+        if enricher is not None:
+            chunk_texts = [c.text for c in chunks]
+            prefixes = list(enricher.enrich_batch(full_text_for_cr, chunk_texts))
+            for i, prefix in enumerate(prefixes):
+                chunks[i].contextual_prefix = prefix
 
         n_chunks = len(chunks)
         emit("embedding", 45, f"{entry.id}: embedding 0/{n_chunks}")
