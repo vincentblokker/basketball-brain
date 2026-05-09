@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.routers import admin as admin_router
 from app.routers import eval as eval_router
+from app.routers import metrics as metrics_router
 from app.routers import query as query_router
 
 app = FastAPI(title="Basketball Brain API", version="0.1.0")
@@ -32,6 +33,7 @@ app.add_middleware(
 app.include_router(query_router.router)
 app.include_router(eval_router.router)
 app.include_router(admin_router.router)
+app.include_router(metrics_router.router)
 
 # Serve per-page PDF screenshots. Caddy strips /api/ so external URL is
 # /api/pages/{source_id}/page-NNNN.png which lands here as /pages/...

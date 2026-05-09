@@ -43,14 +43,39 @@ def hybrid_retrieve(
     vector_weight: float = 1.0,
     keyword_weight: float = 1.0,
 ) -> list[Chunk]:
-    """Hybrid retrieval: vector + BM25 + RRF fusion.
+    """Hybrid retrieval: vector + BM25 + RRF fusion. Returns chunks only."""
+    chunks, _ = hybrid_retrieve_with_metrics(
+        question, store, bm25,
+        top_k=top_k, tenant_id=tenant_id, filters=filters,
+        candidate_pool=candidate_pool,
+        vector_weight=vector_weight, keyword_weight=keyword_weight,
+    )
+    return chunks
 
-    1. Vector lane retrieves `candidate_pool` chunks via ChromaStore.
+
+def hybrid_retrieve_with_metrics(
+    question: str,
+    store: ChromaStore,
+    bm25: BM25Index,
+    top_k: int = 5,
+    tenant_id: str = "public",
+    filters: dict[str, str] | None = None,
+    candidate_pool: int = 50,
+    vector_weight: float = 1.0,
+    keyword_weight: float = 1.0,
+) -> tuple[list[Chunk], dict[str, float]]:
+    """Hybrid retrieval that also returns per-call metrics.
+
+    Metrics dict contains:
+    - mean_vector_similarity: float ∈ [0, 1] across the vector-lane top-N.
+      Computed as 1 - mean(cosine_distance).
+
+    1. Vector lane retrieves `candidate_pool` chunks (with distances).
     2. BM25 lane retrieves `candidate_pool` ids via lexical scoring.
     3. RRF fuses both rankings.
-    4. Returns top_k Chunk objects.
+    4. Returns top_k Chunk objects + metrics.
     """
-    vector_chunks = store.query(
+    vector_chunks, vector_distances = store.query_with_distances(
         question, top_k=candidate_pool, tenant_id=tenant_id, filters=filters
     )
     vector_ids = [c.chunk_id for c in vector_chunks]
@@ -73,7 +98,17 @@ def hybrid_retrieve(
     by_id: dict[str, Chunk] = {c.chunk_id: c for c in vector_chunks}
     for cid in keyword_ids:
         by_id.setdefault(cid, bm25_by_id[cid])
-    return [by_id[i] for i in fused_ids if i in by_id]
+    chunks = [by_id[i] for i in fused_ids if i in by_id]
+
+    if vector_distances:
+        # Cap at top_k for similarity proxy — that's what the user effectively saw.
+        top_distances = vector_distances[:top_k]
+        mean_sim = max(0.0, 1.0 - sum(top_distances) / len(top_distances))
+    else:
+        mean_sim = 0.0
+    metrics = {"mean_vector_similarity": mean_sim}
+
+    return chunks, metrics
 
 
 def _passes_filters(

@@ -326,6 +326,14 @@ function Layout({ children, onLogout }: { children: React.ReactNode; onLogout?: 
             Chat
           </Link>
           {onLogout && (
+            <Link
+              href="/admin/metrics"
+              className="rounded-md px-2.5 py-1.5 text-[14px] font-medium text-fg-2 transition-colors hover:bg-bg-3 hover:text-fg"
+            >
+              Metrics
+            </Link>
+          )}
+          {onLogout && (
             <button
               onClick={onLogout}
               className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[14px] font-medium text-fg-2 hover:bg-bg-3 hover:text-fg"

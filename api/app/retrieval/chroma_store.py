@@ -57,6 +57,20 @@ class ChromaStore:
         tenant_id: str = "public",
         filters: dict[str, str] | None = None,
     ) -> list[Chunk]:
+        chunks, _ = self.query_with_distances(
+            question, top_k=top_k, tenant_id=tenant_id, filters=filters,
+        )
+        return chunks
+
+    def query_with_distances(
+        self,
+        question: str,
+        top_k: int = 5,
+        tenant_id: str = "public",
+        filters: dict[str, str] | None = None,
+    ) -> tuple[list[Chunk], list[float]]:
+        """Same as query() but also returns the cosine distances per chunk.
+        Distance ∈ [0, 2]; cosine_similarity = 1 - distance."""
         where: dict[str, Any] = {"tenant_id": tenant_id}
         if filters:
             where.update(filters)
@@ -67,7 +81,12 @@ class ChromaStore:
             where=where,
         )
         n = len(result["ids"][0]) if result["ids"] else 0
-        return [self._chunk_from_query_result(result, i) for i in range(n)]
+        chunks = [self._chunk_from_query_result(result, i) for i in range(n)]
+        distances = [
+            float(result["distances"][0][i])
+            for i in range(n)
+        ] if result.get("distances") else []
+        return chunks, distances
 
     def all_chunks(self, tenant_id: str = "public") -> list[Chunk]:
         result = self.collection.get(where={"tenant_id": tenant_id})

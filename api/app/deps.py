@@ -7,6 +7,7 @@ from app.retrieval.chroma_store import ChromaStore
 if TYPE_CHECKING:
     from app.admin.jobs import JobsManager
     from app.generation.llm import LLMGenerator
+    from app.metrics.store import MetricsStore
     from app.retrieval.bm25_index import BM25Index
 
 
@@ -32,3 +33,9 @@ def get_bm25() -> "BM25Index":
 def get_jobs() -> "JobsManager":
     from app.admin.jobs import JobsManager
     return JobsManager()
+
+
+@lru_cache(maxsize=1)
+def get_metrics() -> "MetricsStore":
+    from app.metrics.store import MetricsStore
+    return MetricsStore(settings.metrics_db_path)

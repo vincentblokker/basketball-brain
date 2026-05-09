@@ -32,5 +32,8 @@ class Settings(BaseSettings):
     # Trust X-Forwarded-For when behind a reverse proxy (Caddy on host).
     rate_limit_trust_forwarded: bool = True
 
+    # Metrics SQLite — query log + eval-run log for the admin dashboard.
+    metrics_db_path: str = "./data/metrics/metrics.sqlite"
+
 
 settings = Settings()

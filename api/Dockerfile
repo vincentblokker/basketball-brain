@@ -34,6 +34,8 @@ RUN ln -s /app /app/api
 RUN mkdir -p ./chroma
 # Page-thumbnail dir (bind-mounted in compose)
 RUN mkdir -p ./data/pages
+# Metrics SQLite dir (bind-mounted in compose)
+RUN mkdir -p ./data/metrics
 
 EXPOSE 8000
 

@@ -16,6 +16,8 @@ services:
       - ../api/data/raw:/app/data/raw
       # Page-thumbnail PNGs rendered during ingest. Persisted across rebuilds.
       - ../api/data/pages:/app/data/pages
+      # Metrics SQLite — query log + eval-run history for the dashboard.
+      - ../api/data/metrics:/app/data/metrics
     # Bind to localhost only — host Caddy proxies to 127.0.0.1:8000
     ports:
       - "127.0.0.1:8000:8000"
