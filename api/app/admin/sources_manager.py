@@ -181,10 +181,24 @@ class SourcesManager:
     # ---- internals ----
 
     def _register_and_ingest(self, entry: dict[str, Any]) -> dict[str, Any]:
+        """Append to manifest + ingest. Rolls back manifest, file, and any
+        partial chunks if ingestion fails — leaves no orphans."""
         manifest = self._read_manifest()
         manifest.append(entry)
         self._write_manifest(manifest)
-        return self._ingest_only(entry)
+        try:
+            return self._ingest_only(entry)
+        except Exception:
+            # rollback: remove manifest entry, delete file, drop partial chunks
+            self._write_manifest([e for e in manifest if e["id"] != entry["id"]])
+            file_path = self.raw_dir / entry["file"]
+            if file_path.exists():
+                file_path.unlink()
+            try:
+                self.store.delete_by_source(entry["id"])
+            except Exception:
+                pass  # best-effort
+            raise
 
     def _ingest_only(self, entry: dict[str, Any]) -> dict[str, Any]:
         # Write a tiny one-entry manifest to disk and ingest just that.
