@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { Message } from "./message";
-import { ask } from "@/lib/api";
+import { RateLimitError, ask } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { QueryResponse } from "@/lib/types";
 
@@ -48,16 +48,14 @@ export function Chat() {
             : turn,
         ),
       );
-    } catch {
+    } catch (err) {
+      const msg = err instanceof RateLimitError
+        ? formatRateLimitMessage(err.retryAfterSeconds)
+        : "Er ging iets mis bij het ophalen van het antwoord. Probeer het opnieuw — als het blijft gebeuren, laat het weten via GitHub.";
       setTurns((t) =>
         t.map((turn) =>
           turn.id === loadingId
-            ? {
-                id: loadingId,
-                role: "assistant-error",
-                message:
-                  "Er ging iets mis bij het ophalen van het antwoord. Probeer het opnieuw — als het blijft gebeuren, laat het weten via GitHub.",
-              }
+            ? { id: loadingId, role: "assistant-error", message: msg }
             : turn,
         ),
       );
@@ -329,6 +327,21 @@ function Composer({
       </div>
     </form>
   );
+}
+
+function formatRateLimitMessage(seconds: number): string {
+  if (seconds <= 0) {
+    return "Je hebt het maximum aantal vragen voor nu bereikt. Probeer het later opnieuw.";
+  }
+  if (seconds < 90) {
+    return `Even pauze — je hebt het maximum aantal vragen per uur bereikt. Probeer over ${seconds} seconden opnieuw.`;
+  }
+  if (seconds < 3600) {
+    const m = Math.ceil(seconds / 60);
+    return `Even pauze — je hebt het maximum aantal vragen per uur bereikt. Probeer over ${m} minuten opnieuw.`;
+  }
+  const h = Math.ceil(seconds / 3600);
+  return `Daglimiet bereikt. Probeer over ${h} uur opnieuw — of laat het me weten als je vaker nodig hebt.`;
 }
 
 function Kbd({ children }: { children: React.ReactNode }) {

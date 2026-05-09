@@ -13,7 +13,9 @@ class Settings(BaseSettings):
     chroma_persist_dir: str = "./chroma"
     embedding_model: str = "BAAI/bge-m3"
     # OpenRouter-style model IDs: <provider>/<model>
-    llm_model: str = "anthropic/claude-sonnet-4-6"
+    # Default Haiku — ~10× cheaper than Sonnet, quality is fine for grounded
+    # RAG answers. Override via LLM_MODEL env var when needed.
+    llm_model: str = "anthropic/claude-haiku-4-5"
     cr_model: str = "anthropic/claude-haiku-4-5"
     default_tenant: str = "public"
     log_level: str = "INFO"
@@ -22,6 +24,13 @@ class Settings(BaseSettings):
     # Generate a random one with: openssl rand -hex 32
     admin_token: str = ""
     raw_dir: str = "./data/raw"
+
+    # Rate-limit on /query — per-IP, rolling window. Set to 0 to disable.
+    # Defaults are generous for trusted users but block scraper abuse.
+    rate_limit_per_day: int = 20
+    rate_limit_per_hour: int = 10
+    # Trust X-Forwarded-For when behind a reverse proxy (Caddy on host).
+    rate_limit_trust_forwarded: bool = True
 
 
 settings = Settings()

@@ -1,11 +1,15 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.middleware.rate_limit import RateLimitMiddleware
 from app.routers import admin as admin_router
 from app.routers import eval as eval_router
 from app.routers import query as query_router
 
 app = FastAPI(title="Basketball Brain API", version="0.1.0")
+
+# Rate-limit must run BEFORE CORS so the 429 still gets CORS headers.
+app.add_middleware(RateLimitMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -13,6 +17,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
+    expose_headers=[
+        "X-RateLimit-Limit-Day",
+        "X-RateLimit-Remaining-Day",
+        "X-RateLimit-Limit-Hour",
+        "X-RateLimit-Remaining-Hour",
+        "Retry-After",
+    ],
 )
 
 app.include_router(query_router.router)
