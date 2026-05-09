@@ -63,6 +63,13 @@ def ingest_corpus(
                 text=ct,
                 source_type=entry.source_type,
                 contextual_prefix=prefixes[i],
+                # v2 schema — propagate manifest metadata to each chunk
+                authority=entry.authority,
+                level=entry.level,
+                topic=entry.topic,
+                region=entry.region,
+                ruleset=entry.ruleset,
+                chunk_type=entry.chunk_type,
             )
             for i, ct in enumerate(chunk_texts)
         ]

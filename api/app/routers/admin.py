@@ -41,6 +41,13 @@ class AddUrlRequest(BaseModel):
     audience: list[str] | None = None
     age_category: str = "all"
     language: str = "nl"
+    # v2 schema fields — all optional, defaults preserve old behaviour
+    authority: str = "supplementary"
+    level: str = "n/a"
+    topic: str | None = None
+    region: str = "international"
+    ruleset: str | None = None
+    chunk_type: str = "prose"
 
 
 @router.post("/auth/check", dependencies=[_AdminDep])
@@ -85,6 +92,12 @@ def _run_url_job(
             audience=req.audience,
             age_category=req.age_category,
             language=req.language,
+            authority=req.authority,
+            level=req.level,
+            topic=req.topic,
+            region=req.region,
+            ruleset=req.ruleset,
+            chunk_type=req.chunk_type,
             on_stage=cb,
         )
         jobs.update(
@@ -115,6 +128,12 @@ def _run_upload_job(
     age_category: str,
     language: str,
     source_url: str,
+    authority: str,
+    level: str,
+    topic: str | None,
+    region: str,
+    ruleset: str | None,
+    chunk_type: str,
     store: ChromaStore,
     jobs: JobsManager,
 ) -> None:
@@ -129,6 +148,12 @@ def _run_upload_job(
             age_category=age_category,
             language=language,
             source_url=source_url,
+            authority=authority,
+            level=level,
+            topic=topic,
+            region=region,
+            ruleset=ruleset,
+            chunk_type=chunk_type,
             on_stage=cb,
         )
         jobs.update(
@@ -196,6 +221,12 @@ async def upload_file(
     age_category: str = Form("all"),
     language: str = Form("nl"),
     source_url: str = Form(""),
+    authority: str = Form("supplementary"),
+    level: str = Form("n/a"),
+    topic: str = Form(""),
+    region: str = Form("international"),
+    ruleset: str = Form(""),
+    chunk_type: str = Form("prose"),
     store: ChromaStore = _StoreDep,
     jobs: JobsManager = _JobsDep,
 ) -> dict[str, str]:
@@ -212,6 +243,12 @@ async def upload_file(
         age_category=age_category,
         language=language,
         source_url=source_url,
+        authority=authority,
+        level=level,
+        topic=topic or None,
+        region=region,
+        ruleset=ruleset or None,
+        chunk_type=chunk_type,
         store=store,
         jobs=jobs,
     )

@@ -117,6 +117,13 @@ class ChromaStore:
             "page": c.page if c.page is not None else -1,
             "chunk_index": c.chunk_index,
             "contextual_prefix": c.contextual_prefix or "",
+            # v2 schema fields
+            "authority": c.authority,
+            "level": c.level,
+            "topic": c.topic or "",
+            "region": c.region,
+            "ruleset": c.ruleset or "",
+            "chunk_type": c.chunk_type,
         }
 
     @staticmethod
@@ -155,4 +162,11 @@ class ChromaStore:
             chunk_index=meta["chunk_index"],
             text=text,
             contextual_prefix=meta["contextual_prefix"] or None,
+            # v2 fields with safe defaults for chunks ingested under v1 schema
+            authority=meta.get("authority") or "supplementary",
+            level=meta.get("level") or "n/a",
+            topic=(meta.get("topic") or None) or None,
+            region=meta.get("region") or "international",
+            ruleset=(meta.get("ruleset") or None) or None,
+            chunk_type=meta.get("chunk_type") or "prose",
         )

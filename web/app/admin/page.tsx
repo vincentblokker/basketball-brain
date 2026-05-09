@@ -26,6 +26,16 @@ const CONTENT_TYPES = ["rule", "philosophy", "research", "general"] as const;
 const LANGUAGES = ["nl", "en"] as const;
 const AGE_CATEGORIES = ["all", "U10", "U12", "U14", "U16", "U18", "senior"] as const;
 const AUDIENCES = ["all", "coach", "referee", "parent", "player"] as const;
+const AUTHORITIES = ["official", "semi-official", "supplementary"] as const;
+const LEVELS = ["n/a", "Mini", "L1", "L2", "L3", "Rookie", "Starter", "All-Star", "MVP"] as const;
+const REGIONS = ["international", "NL", "USA", "EU", "other"] as const;
+const RULESETS = ["", "FIBA", "NBA", "NCAA"] as const;
+const CHUNK_TYPES = ["prose", "rule_article", "drill", "chapter"] as const;
+const COMMON_TOPICS = [
+  "", "shooting", "passing", "dribbling", "defense", "footwork", "rebounding",
+  "press-break", "spacing", "transition", "ball-screen", "zone", "man-to-man",
+  "talent-development", "session-planning", "parents", "coaching-philosophy",
+] as const;
 
 type Toast = { id: number; kind: "ok" | "err"; text: string };
 
@@ -405,25 +415,56 @@ function SourcesTable({
   );
 }
 
-function MetadataFields({
-  contentType, setContentType,
-  language, setLanguage,
-  ageCategory, setAgeCategory,
-  audience, setAudience,
-}: {
+type MetaState = {
   contentType: string; setContentType: (v: string) => void;
   language: string; setLanguage: (v: string) => void;
   ageCategory: string; setAgeCategory: (v: string) => void;
   audience: string[]; setAudience: (v: string[]) => void;
-}) {
+  authority: string; setAuthority: (v: string) => void;
+  level: string; setLevel: (v: string) => void;
+  topic: string; setTopic: (v: string) => void;
+  region: string; setRegion: (v: string) => void;
+  ruleset: string; setRuleset: (v: string) => void;
+  chunkType: string; setChunkType: (v: string) => void;
+};
+
+function MetadataFields(p: MetaState) {
   return (
-    <div className="grid grid-cols-2 gap-2.5">
-      <Select label="Type" value={contentType} onChange={setContentType} options={[...CONTENT_TYPES]} />
-      <Select label="Taal" value={language} onChange={setLanguage} options={[...LANGUAGES]} />
-      <Select label="Leeftijd" value={ageCategory} onChange={setAgeCategory} options={[...AGE_CATEGORIES]} />
-      <MultiSelect label="Doelgroep" values={audience} onChange={setAudience} options={[...AUDIENCES]} />
+    <div className="space-y-2.5">
+      <div className="grid grid-cols-2 gap-2.5">
+        <Select label="Type" value={p.contentType} onChange={p.setContentType} options={[...CONTENT_TYPES]} />
+        <Select label="Taal" value={p.language} onChange={p.setLanguage} options={[...LANGUAGES]} />
+        <Select label="Leeftijd" value={p.ageCategory} onChange={p.setAgeCategory} options={[...AGE_CATEGORIES]} />
+        <Select label="Authority" value={p.authority} onChange={p.setAuthority} options={[...AUTHORITIES]} />
+        <Select label="Level" value={p.level} onChange={p.setLevel} options={[...LEVELS]} />
+        <Select label="Region" value={p.region} onChange={p.setRegion} options={[...REGIONS]} />
+        <Select label="Ruleset" value={p.ruleset} onChange={p.setRuleset} options={[...RULESETS]} />
+        <Select label="Chunker" value={p.chunkType} onChange={p.setChunkType} options={[...CHUNK_TYPES]} />
+      </div>
+      <Select label="Topic" value={p.topic} onChange={p.setTopic} options={[...COMMON_TOPICS]} />
+      <MultiSelect label="Doelgroep" values={p.audience} onChange={p.setAudience} options={[...AUDIENCES]} />
     </div>
   );
+}
+
+function useMeta(): MetaState {
+  const [contentType, setContentType] = useState("general");
+  const [language, setLanguage] = useState("nl");
+  const [ageCategory, setAgeCategory] = useState("all");
+  const [audience, setAudience] = useState<string[]>(["all"]);
+  const [authority, setAuthority] = useState("supplementary");
+  const [level, setLevel] = useState("n/a");
+  const [topic, setTopic] = useState("");
+  const [region, setRegion] = useState("international");
+  const [ruleset, setRuleset] = useState("");
+  const [chunkType, setChunkType] = useState("prose");
+  return {
+    contentType, setContentType, language, setLanguage,
+    ageCategory, setAgeCategory, audience, setAudience,
+    authority, setAuthority, level, setLevel,
+    topic, setTopic, region, setRegion,
+    ruleset, setRuleset, chunkType, setChunkType,
+  };
 }
 
 function AddUrlCard({
@@ -436,10 +477,7 @@ function AddUrlCard({
 }) {
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
-  const [contentType, setContentType] = useState("general");
-  const [language, setLanguage] = useState("nl");
-  const [ageCategory, setAgeCategory] = useState("all");
-  const [audience, setAudience] = useState<string[]>(["all"]);
+  const meta = useMeta();
   const [submitting, setSubmitting] = useState(false);
 
   async function submit(e: React.FormEvent) {
@@ -451,10 +489,16 @@ function AddUrlCard({
       const input: AddUrlInput = {
         url: url.trim(),
         title: title.trim(),
-        content_type: contentType,
-        audience,
-        age_category: ageCategory,
-        language,
+        content_type: meta.contentType,
+        audience: meta.audience,
+        age_category: meta.ageCategory,
+        language: meta.language,
+        authority: meta.authority as AddUrlInput["authority"],
+        level: meta.level as AddUrlInput["level"],
+        topic: meta.topic,
+        region: meta.region,
+        ruleset: meta.ruleset,
+        chunk_type: meta.chunkType as AddUrlInput["chunk_type"],
       };
       const { job_id } = await addUrl(input);
       void trackJob(job_id, `URL: ${title.trim()}`);
@@ -473,12 +517,7 @@ function AddUrlCard({
       <form onSubmit={submit} className="space-y-3">
         <Input label="URL" type="url" value={url} onChange={setUrl} placeholder="https://..." required />
         <Input label="Titel" value={title} onChange={setTitle} placeholder="Bijv. NBB Spelregels 2025-2026" required />
-        <MetadataFields
-          contentType={contentType} setContentType={setContentType}
-          language={language} setLanguage={setLanguage}
-          ageCategory={ageCategory} setAgeCategory={setAgeCategory}
-          audience={audience} setAudience={setAudience}
-        />
+        <MetadataFields {...meta} />
         <button
           type="submit"
           disabled={disabled || submitting || !url.trim() || !title.trim()}
@@ -502,10 +541,7 @@ function UploadCard({
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
-  const [contentType, setContentType] = useState("general");
-  const [language, setLanguage] = useState("nl");
-  const [ageCategory, setAgeCategory] = useState("all");
-  const [audience, setAudience] = useState<string[]>(["all"]);
+  const meta = useMeta();
   const [submitting, setSubmitting] = useState(false);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -532,10 +568,16 @@ function UploadCard({
     try {
       const { job_id } = await uploadFile(file, {
         title: title.trim(),
-        content_type: contentType,
-        audience,
-        age_category: ageCategory,
-        language,
+        content_type: meta.contentType,
+        audience: meta.audience,
+        age_category: meta.ageCategory,
+        language: meta.language,
+        authority: meta.authority as AddUrlInput["authority"],
+        level: meta.level as AddUrlInput["level"],
+        topic: meta.topic,
+        region: meta.region,
+        ruleset: meta.ruleset,
+        chunk_type: meta.chunkType as AddUrlInput["chunk_type"],
       });
       void trackJob(job_id, `Upload: ${title.trim()}`);
       setFile(null);
@@ -582,12 +624,7 @@ function UploadCard({
           )}
         </label>
         <Input label="Titel" value={title} onChange={setTitle} placeholder="Bijv. Te jong te snel" required />
-        <MetadataFields
-          contentType={contentType} setContentType={setContentType}
-          language={language} setLanguage={setLanguage}
-          ageCategory={ageCategory} setAgeCategory={setAgeCategory}
-          audience={audience} setAudience={setAudience}
-        />
+        <MetadataFields {...meta} />
         <button
           type="submit"
           disabled={disabled || submitting || !file || !title.trim()}

@@ -1,5 +1,9 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
+export type Authority = "official" | "semi-official" | "supplementary";
+export type Level = "n/a" | "Mini" | "L1" | "L2" | "L3" | "Rookie" | "Starter" | "All-Star" | "MVP";
+export type ChunkType = "prose" | "rule_article" | "drill" | "chapter";
+
 export type Source = {
   id: string;
   file: string;
@@ -10,6 +14,12 @@ export type Source = {
   language: string;
   url: string;
   source_type: "primary" | "synthesized";
+  authority?: Authority;
+  level?: Level;
+  topic?: string | null;
+  region?: string;
+  ruleset?: string | null;
+  chunk_type?: ChunkType;
   chunk_count: number;
   file_exists: boolean;
   file_bytes: number;
@@ -22,6 +32,12 @@ export type AddUrlInput = {
   audience: string[];
   age_category: string;
   language: string;
+  authority: Authority;
+  level: Level;
+  topic: string;
+  region: string;
+  ruleset: string;
+  chunk_type: ChunkType;
 };
 
 export type Job = {
@@ -106,6 +122,12 @@ export async function uploadFile(
   fd.append("age_category", meta.age_category);
   fd.append("language", meta.language);
   if (meta.source_url) fd.append("source_url", meta.source_url);
+  fd.append("authority", meta.authority);
+  fd.append("level", meta.level);
+  if (meta.topic) fd.append("topic", meta.topic);
+  fd.append("region", meta.region);
+  if (meta.ruleset) fd.append("ruleset", meta.ruleset);
+  fd.append("chunk_type", meta.chunk_type);
   const res = await fetch(`${API_BASE}/admin/sources/upload`, {
     method: "POST",
     headers: authHeaders(),

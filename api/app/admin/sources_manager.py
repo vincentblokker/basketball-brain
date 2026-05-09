@@ -69,6 +69,12 @@ class SourcesManager:
         audience: list[str] | None = None,
         age_category: str = "all",
         language: str = "nl",
+        authority: str = "supplementary",
+        level: str = "n/a",
+        topic: str | None = None,
+        region: str = "international",
+        ruleset: str | None = None,
+        chunk_type: str = "prose",
         on_stage: StageCallback | None = None,
     ) -> dict[str, Any]:
         """Fetch a URL, save the body, register in manifest, ingest. Returns {id, chunk_count}."""
@@ -109,6 +115,12 @@ class SourcesManager:
             "language": language,
             "url": url,
             "source_type": "primary",
+            "authority": authority,
+            "level": level,
+            "topic": topic,
+            "region": region,
+            "ruleset": ruleset,
+            "chunk_type": chunk_type,
         }
         return self._register_and_ingest(entry, on_stage=on_stage)
 
@@ -122,6 +134,12 @@ class SourcesManager:
         age_category: str = "all",
         language: str = "nl",
         source_url: str = "",
+        authority: str = "supplementary",
+        level: str = "n/a",
+        topic: str | None = None,
+        region: str = "international",
+        ruleset: str | None = None,
+        chunk_type: str = "prose",
         on_stage: StageCallback | None = None,
     ) -> dict[str, Any]:
         """Save uploaded bytes to disk, register, ingest."""
@@ -154,6 +172,12 @@ class SourcesManager:
             "language": language,
             "url": source_url or "n/a",
             "source_type": "primary",
+            "authority": authority,
+            "level": level,
+            "topic": topic,
+            "region": region,
+            "ruleset": ruleset,
+            "chunk_type": chunk_type,
         }
         return self._register_and_ingest(entry, on_stage=on_stage)
 
