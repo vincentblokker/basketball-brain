@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link2, Loader2, LogOut, Pencil, Plus, RefreshCw, Trash2, Upload, X } from "lucide-react";
+import { FileImage, Link2, Loader2, LogOut, Pencil, Plus, RefreshCw, Trash2, Upload, X } from "lucide-react";
 
 import { BasketballMark } from "@/components/marks";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,7 @@ import {
   formatBytes,
   listSources,
   pollJob,
+  regeneratePages,
   reingestSource,
   stageLabel,
   updateSource,
@@ -164,6 +165,19 @@ export default function AdminPage() {
     }
   }
 
+  async function handleRegeneratePages(source: Source) {
+    setBusy(true);
+    try {
+      const r = await regeneratePages(source.id);
+      toast("ok", `${source.title}: ${r.page_count} pagina-thumbnails gerenderd.`);
+      await refresh();
+    } catch (e) {
+      toast("err", `Page-render mislukt: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleSaveEdit(updates: SourceUpdate) {
     if (!editing) return;
     setBusy(true);
@@ -260,6 +274,7 @@ export default function AdminPage() {
           onDelete={handleDelete}
           onReingest={handleReingest}
           onEdit={setEditing}
+          onRegeneratePages={handleRegeneratePages}
         />
 
         <div className="my-12 grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -368,12 +383,14 @@ function SourcesTable({
   onDelete,
   onReingest,
   onEdit,
+  onRegeneratePages,
 }: {
   sources: Source[] | null;
   busy: boolean;
   onDelete: (id: string) => void;
   onReingest: (s: Source) => void;
   onEdit: (s: Source) => void;
+  onRegeneratePages: (s: Source) => void;
 }) {
   if (sources === null) {
     return <div className="text-fg-3">Laden…</div>;
@@ -427,6 +444,18 @@ function SourcesTable({
                       className="rounded-md p-1.5 text-fg-3 hover:bg-bg-4 hover:text-fg disabled:opacity-30"
                     >
                       <Pencil className="h-[13px] w-[13px]" />
+                    </button>
+                    <button
+                      onClick={() => onRegeneratePages(s)}
+                      disabled={busy || !s.file_exists || !s.file.toLowerCase().endsWith(".pdf")}
+                      title={
+                        s.file.toLowerCase().endsWith(".pdf")
+                          ? `Render pagina-thumbnails (${s.page_count ?? 0} nu)`
+                          : "Geen PDF — pagina-thumbnails niet van toepassing"
+                      }
+                      className="rounded-md p-1.5 text-fg-3 hover:bg-bg-4 hover:text-fg disabled:opacity-30"
+                    >
+                      <FileImage className="h-[13px] w-[13px]" />
                     </button>
                     <button
                       onClick={() => onReingest(s)}
