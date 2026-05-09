@@ -2,6 +2,13 @@ import type { QueryResponse } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
+/** URL to a rendered PDF page-thumbnail. Returns null if page is missing. */
+export function pageImageUrl(sourceId: string, page: number | null | undefined): string | null {
+  if (!page || page < 1) return null;
+  const padded = page.toString().padStart(4, "0");
+  return `${API_BASE}/pages/${encodeURIComponent(sourceId)}/page-${padded}.png`;
+}
+
 export class RateLimitError extends Error {
   retryAfterSeconds: number;
   constructor(retryAfterSeconds: number) {

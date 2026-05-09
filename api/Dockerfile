@@ -5,6 +5,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv (project uses uv for fast pip-compatible installs)
@@ -31,6 +32,8 @@ RUN ln -s /app /app/api
 
 # Create chroma persistence dir (mounted as volume in compose)
 RUN mkdir -p ./chroma
+# Page-thumbnail dir (bind-mounted in compose)
+RUN mkdir -p ./data/pages
 
 EXPOSE 8000
 

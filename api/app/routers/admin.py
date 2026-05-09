@@ -286,6 +286,17 @@ def update_source(
     return result
 
 
+@router.post("/sources/{source_id}/regenerate-pages", dependencies=[_AdminDep])
+def regenerate_pages(source_id: str, store: ChromaStore = _StoreDep) -> dict[str, Any]:
+    """Re-render PDF page-thumbnails without re-embedding. Cheap."""
+    try:
+        return _manager(store).regenerate_pages(source_id)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=f"Source not found: {source_id}") from e
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=400, detail=f"Source file missing: {e}") from e
+
+
 @router.delete("/sources/{source_id}", dependencies=[_AdminDep])
 def delete_source(source_id: str, store: ChromaStore = _StoreDep) -> dict[str, Any]:
     try:

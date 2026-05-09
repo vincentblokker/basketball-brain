@@ -21,6 +21,7 @@ export type Source = {
   ruleset?: string | null;
   chunk_type?: ChunkType;
   chunk_count: number;
+  page_count?: number;
   file_exists: boolean;
   file_bytes: number;
 };
@@ -176,6 +177,23 @@ export async function reingestSource(id: string): Promise<{ job_id: string }> {
     headers: authHeaders(),
   });
   return (await check(res)) as { job_id: string };
+}
+
+export async function regeneratePages(
+  id: string,
+): Promise<{ id: string; page_count: number }> {
+  const res = await fetch(
+    `${API_BASE}/admin/sources/${encodeURIComponent(id)}/regenerate-pages`,
+    { method: "POST", headers: authHeaders() },
+  );
+  return (await check(res)) as { id: string; page_count: number };
+}
+
+/** Build the URL to a rendered PDF page. Returns null if no page available. */
+export function pageImageUrl(sourceId: string, page: number | null | undefined): string | null {
+  if (!page || page < 1) return null;
+  const padded = page.toString().padStart(4, "0");
+  return `${API_BASE}/pages/${encodeURIComponent(sourceId)}/page-${padded}.png`;
 }
 
 export async function getJob(jobId: string): Promise<Job> {

@@ -4,6 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from app.ingest.chunker import recursive_chunk
+from app.ingest.page_images import extract_pages
 from app.ingest.pdf_loader import load_text
 from app.retrieval.chroma_store import ChromaStore
 from app.schemas import Chunk, SourceManifestEntry
@@ -41,6 +42,15 @@ def ingest_corpus(
 
         emit("loading", 25, f"{entry.id}: lezen")
         text = load_text(path)
+
+        # Render PDF pages as PNGs alongside text-extraction.
+        # HTML/text sources skip silently. Failure is non-fatal.
+        if path.suffix.lower() == ".pdf":
+            emit("pages", 30, f"{entry.id}: pagina-thumbnails maken")
+            pages_dir = raw_dir.parent / "pages" / entry.id
+            page_count = extract_pages(path, pages_dir)
+            if page_count:
+                print(f"Rendered {page_count} page-images for {entry.id}")
 
         emit("chunking", 35, f"{entry.id}: chunks maken")
         chunk_texts = recursive_chunk(text, chunk_size=chunk_size, overlap=overlap)

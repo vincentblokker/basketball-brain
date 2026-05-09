@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 
+from app.ingest.page_images import extract_pages, remove_pages
 from app.ingest.pipeline import ingest_corpus
 from app.retrieval.chroma_store import ChromaStore
 from app.schemas import SourceManifestEntry
@@ -41,25 +42,46 @@ class SourcesManager:
     def __init__(self, raw_dir: Path, store: ChromaStore):
         self.raw_dir = raw_dir
         self.manifest_path = raw_dir / "sources.json"
+        self.pages_dir = raw_dir.parent / "pages"
         self.store = store
         self.raw_dir.mkdir(parents=True, exist_ok=True)
+        self.pages_dir.mkdir(parents=True, exist_ok=True)
         if not self.manifest_path.exists():
             self.manifest_path.write_text("[]")
 
     def list_sources(self) -> list[dict[str, Any]]:
-        """Return manifest entries enriched with chunk-count from Chroma."""
+        """Return manifest entries enriched with chunk-count + page-count."""
         manifest = self._read_manifest()
         out: list[dict[str, Any]] = []
         for entry in manifest:
             file_path = self.raw_dir / entry["file"]
             chunk_count = self.store.count_by_source(entry["id"])
+            pages_dir = self.pages_dir / entry["id"]
+            page_count = (
+                len(list(pages_dir.glob("page-*.png"))) if pages_dir.exists() else 0
+            )
             out.append({
                 **entry,
                 "chunk_count": chunk_count,
+                "page_count": page_count,
                 "file_exists": file_path.exists(),
                 "file_bytes": file_path.stat().st_size if file_path.exists() else 0,
             })
         return out
+
+    def regenerate_pages(self, source_id: str) -> dict[str, Any]:
+        """Re-render page-thumbnails for an existing source. Cheap — no
+        re-chunking, no re-embedding."""
+        manifest = self._read_manifest()
+        entry = next((e for e in manifest if e["id"] == source_id), None)
+        if entry is None:
+            raise KeyError(source_id)
+        file_path = self.raw_dir / entry["file"]
+        if not file_path.exists():
+            raise FileNotFoundError(file_path)
+        out_dir = self.pages_dir / source_id
+        page_count = extract_pages(file_path, out_dir)
+        return {"id": source_id, "page_count": page_count}
 
     def add_url(
         self,
@@ -250,6 +272,9 @@ class SourcesManager:
         file_path = self.raw_dir / removed["file"]
         if file_path.exists():
             file_path.unlink()
+
+        # Remove page-thumbnails too
+        remove_pages(self.pages_dir / source_id)
 
         chunks_deleted = self.store.delete_by_source(source_id)
         self._write_manifest(kept)
