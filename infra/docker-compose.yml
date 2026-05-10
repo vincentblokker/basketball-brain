@@ -6,6 +6,10 @@ services:
       context: ..
       dockerfile: api/Dockerfile
     container_name: bbrain-api
+    # Override Dockerfile CMD: 1 worker = 1 bge-m3 model copy. With 2 workers,
+    # large-PDF ingest pushed RAM past the 3.7GB host limit and OOM-killed
+    # workers mid-embedding. 1 worker is plenty for this low-traffic deployment.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
     env_file:
       - ../api/.env
     volumes:
