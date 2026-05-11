@@ -36,10 +36,15 @@ def evaluate(
     bm25: BM25Index,
     gen: Any,
     top_k: int = 5,
+    vector_weight: float = 1.0,
+    keyword_weight: float = 1.0,
 ) -> list[EvalResult]:
     results: list[EvalResult] = []
     for item in TESTSET:
-        chunks = hybrid_retrieve(item["question"], store, bm25, top_k=top_k)
+        chunks = hybrid_retrieve(
+            item["question"], store, bm25, top_k=top_k,
+            vector_weight=vector_weight, keyword_weight=keyword_weight,
+        )
         retrieved_source_ids = list({c.source_id for c in chunks})
         expected = set(item["expected_source_ids"])
         retrieved = set(retrieved_source_ids)
