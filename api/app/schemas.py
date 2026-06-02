@@ -65,7 +65,9 @@ class Chunk(BaseModel):
 class QueryRequest(BaseModel):
     question: str
     tenant_id: str = "public"
-    top_k: int = 5
+    # None -> use the server's tuned default (settings.top_k). Clients may
+    # still override per request.
+    top_k: int | None = None
     filters: dict[str, str] | None = None
 
 
@@ -83,3 +85,6 @@ class QueryResponse(BaseModel):
     answer: str
     citations: list[Citation]
     retrieved_chunks: list[Chunk]
+    # True when the answer fell outside the source corpus ("buiten bereik").
+    # Drives the frontend's out-of-scope state; computed from the answer text.
+    out_of_scope: bool = False

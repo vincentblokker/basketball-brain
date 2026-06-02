@@ -65,6 +65,8 @@ def test_query_returns_answer_with_citations(client_with_mocks):
     assert response.status_code == 200
     data = response.json()
     assert "shot clock" in data["answer"].lower()
+    # A normal grounded answer is in-scope.
+    assert data["out_of_scope"] is False
     assert len(data["citations"]) >= 1
     assert data["citations"][0]["title"] == "Test Source"
     assert data["citations"][0]["url"] == "https://example.com/source"
@@ -80,6 +82,16 @@ def test_query_default_top_k(client_with_mocks):
     client, _mock_gen, _store = client_with_mocks
     response = client.post("/query", json={"question": "test"})
     assert response.status_code == 200
+
+
+def test_query_sets_out_of_scope_flag(client_with_mocks):
+    client, mock_gen, _store = client_with_mocks
+    # An "I don't know" answer must surface out_of_scope=True to the client so
+    # the frontend can render the "Buiten bereik van de bronnen" state.
+    mock_gen.answer.return_value = "Ik weet het niet op basis van de bronnen."
+    response = client.post("/query", json={"question": "Wat is de prijs van melk?"})
+    assert response.status_code == 200
+    assert response.json()["out_of_scope"] is True
 
 
 def test_query_demo_mode_skips_paid_generation(client_with_mocks, monkeypatch):

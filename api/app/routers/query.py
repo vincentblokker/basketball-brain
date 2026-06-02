@@ -9,7 +9,7 @@ from app.metrics.store import MetricsStore
 from app.retrieval.bm25_index import BM25Index
 from app.retrieval.chroma_store import ChromaStore
 from app.retrieval.hybrid import hybrid_retrieve_with_metrics
-from app.schemas import Citation, QueryRequest, QueryResponse
+from app.schemas import Chunk, Citation, QueryRequest, QueryResponse
 
 router = APIRouter()
 
@@ -38,12 +38,17 @@ def query(
     t0 = time.perf_counter()
     error: str | None = None
     answer = ""
-    chunks = []
+    oos = False
+    chunks: list[Chunk] = []
     retrieval_metrics: dict[str, float] = {}
+    # Fall back to the server's tuned default when the client doesn't specify.
+    top_k = req.top_k if req.top_k is not None else settings.top_k
     try:
         chunks, retrieval_metrics = hybrid_retrieve_with_metrics(
             req.question, store, bm25,
-            top_k=req.top_k, tenant_id=req.tenant_id, filters=req.filters,
+            top_k=top_k, tenant_id=req.tenant_id, filters=req.filters,
+            vector_weight=settings.vector_weight,
+            keyword_weight=settings.keyword_weight,
         )
         if settings.query_generation_disabled:
             # Cost guard: retrieval already ran (free, local embeddings); skip
@@ -51,6 +56,7 @@ def query(
             answer = settings.demo_notice
         else:
             answer = gen.answer(req.question, chunks)
+        oos = _is_oos(answer)
     except Exception as e:
         error = str(e)
         raise
@@ -60,11 +66,11 @@ def query(
             metrics.log_query(
                 question=req.question,
                 tenant_id=req.tenant_id,
-                top_k=req.top_k,
+                top_k=top_k,
                 retrieved_count=len(chunks),
                 citation_source_ids=list({c.source_id for c in chunks}),
                 answer_length=len(answer),
-                is_oos=_is_oos(answer),
+                is_oos=oos,
                 mean_similarity=retrieval_metrics.get("mean_vector_similarity"),
                 latency_ms=latency_ms,
                 llm_model=settings.llm_model,
@@ -85,4 +91,6 @@ def query(
         )
         for c in chunks
     ]
-    return QueryResponse(answer=answer, citations=citations, retrieved_chunks=chunks)
+    return QueryResponse(
+        answer=answer, citations=citations, retrieved_chunks=chunks, out_of_scope=oos
+    )

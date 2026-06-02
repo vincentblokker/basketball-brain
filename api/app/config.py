@@ -48,5 +48,18 @@ class Settings(BaseSettings):
     # Metrics SQLite — query log + eval-run log for the admin dashboard.
     metrics_db_path: str = "./data/metrics/metrics.sqlite"
 
+    # Hybrid-retrieval defaults — the tuned "Final Configuration" from the
+    # evaluation report (docs/eval-report.md): dense-heavy 2:1 weighting,
+    # top_k=5. /query reads these so production runs the tuned config; override
+    # per env (VECTOR_WEIGHT / KEYWORD_WEIGHT / TOP_K), no re-ingest needed.
+    vector_weight: float = 2.0
+    keyword_weight: float = 1.0
+    top_k: int = 5
+
+    # Static-file dir for rendered PDF page thumbnails. The relative default
+    # resolves to /app/data/pages in the container (WORKDIR=/app, the bind-mount
+    # target) and to api/data/pages locally. Override with PAGES_DIR if needed.
+    pages_dir: str = "./data/pages"
+
 
 settings = Settings()

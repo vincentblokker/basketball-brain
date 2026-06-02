@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.config import settings
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.routers import admin as admin_router
 from app.routers import eval as eval_router
@@ -37,7 +38,7 @@ app.include_router(metrics_router.router)
 
 # Serve per-page PDF screenshots. Caddy strips /api/ so external URL is
 # /api/pages/{source_id}/page-NNNN.png which lands here as /pages/...
-_pages_dir = Path("/app/data/pages")
+_pages_dir = Path(settings.pages_dir)
 _pages_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/pages", StaticFiles(directory=str(_pages_dir)), name="pages")
 
