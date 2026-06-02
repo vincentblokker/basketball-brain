@@ -82,6 +82,25 @@ def test_query_default_top_k(client_with_mocks):
     assert response.status_code == 200
 
 
+def test_query_demo_mode_skips_paid_generation(client_with_mocks, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "query_generation_disabled", True)
+    client, mock_gen, _store = client_with_mocks
+    response = client.post(
+        "/query",
+        json={"question": "Hoe lang is de shot clock?", "top_k": 2},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    # Paid LLM call was skipped...
+    mock_gen.answer.assert_not_called()
+    # ...and the fixed notice is returned instead.
+    assert data["answer"] == settings.demo_notice
+    # Retrieval still ran — real citations are returned (the demo's whole point).
+    assert len(data["citations"]) >= 1
+
+
 def test_query_with_tenant_filter_returns_empty_for_unknown_tenant(client_with_mocks):
     client, _mock_gen, _store = client_with_mocks
     response = client.post(

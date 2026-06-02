@@ -45,7 +45,12 @@ def query(
             req.question, store, bm25,
             top_k=req.top_k, tenant_id=req.tenant_id, filters=req.filters,
         )
-        answer = gen.answer(req.question, chunks)
+        if settings.query_generation_disabled:
+            # Cost guard: retrieval already ran (free, local embeddings); skip
+            # the paid LLM call and hand back a fixed notice instead.
+            answer = settings.demo_notice
+        else:
+            answer = gen.answer(req.question, chunks)
     except Exception as e:
         error = str(e)
         raise

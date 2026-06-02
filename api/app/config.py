@@ -20,6 +20,19 @@ class Settings(BaseSettings):
     default_tenant: str = "public"
     log_level: str = "INFO"
 
+    # Demo / cost guard — when true, /query runs retrieval as normal but SKIPS
+    # the paid OpenRouter generation call, returning the real citations plus
+    # `demo_notice` as the answer text. Keeps a public demo free to run. Toggle
+    # via the QUERY_GENERATION_DISABLED env var (recreate the container to apply).
+    query_generation_disabled: bool = False
+    demo_notice: str = (
+        "Live antwoorden staan even uit om de hostingkosten te beperken nu deze "
+        "demo publiek staat. De bronnen hieronder zijn wél echt opgehaald uit de "
+        "officiële documenten — dat retrieval-gedeelte is de kern van Basketball "
+        "Brain. (Live answers are temporarily paused to cap hosting costs; the "
+        "sources below are still retrieved for real.)"
+    )
+
     # Admin upload UI — bearer token check on /admin/* endpoints.
     # Generate a random one with: openssl rand -hex 32
     admin_token: str = ""
